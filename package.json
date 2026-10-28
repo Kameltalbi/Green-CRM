@@ -13,7 +13,9 @@
     "invite:admin": "node scripts/invite-admin.js",
     "test:visual": "node tests/visual-audit.cjs",
     "audit:css": "node scripts/audit-css.cjs",
-    "auth:local": "node scripts/configure-auth-local.js"
+    "auth:local": "node scripts/configure-auth-local.js",
+    "build": "node scripts/build-homepage.cjs",
+    "test:homepage": "node tests/homepage-browser.cjs"
   },
   "dependencies": {
     "better-auth": "^1.7.14",

@@ -95,3 +95,11 @@ Configurer et valider le SMTP de production et Google, puis préparer HTTPS, sec
 La vue métier charge au maximum 5 000 fiches de chaque type et les 50 dernières activités du dashboard. Le tableau pagine localement cet ensemble ; l’historique des fiches possède son endpoint paginé propre. Une pagination serveur de toute l’interface sera nécessaire au-delà de cette taille. Le partage est persistant, sans rafraîchissement temps réel annoncé.
 
 Gmail, calcul des réponses, synchronisation et brouillons Gmail restent hors périmètre, de même qu’Android. Les anciennes maquettes `pages.js`, `compliance.js`, `dashboard.js` ne sont plus chargées. Les clients actifs sont `app.js` (composants publics), `auth-ui.js` et `live.js`.
+
+## Homepage publique complète
+
+La vitrine comporte 11 sections (sans tarifs), un header sticky avec menus déroulants, un menu mobile, huit questions de FAQ interactives et un footer à quatre colonnes. Gmail et Android installable sont explicitement « À venir ». Les captures agrandissables sont celles du produit réel avec des données de test.
+
+Le contenu est pré-rendu dans `public/index.html` : exécuter `npm run build` après toute modification de `public/homepage.js`. La feuille `public/homepage.css` complète le système commun uniquement pour la mise en page publique. Aucun backend ni écran métier n’est modifié par cette refonte. `npm run test:homepage` contrôle liens, CTA, menus, FAQ, responsive et contrastes.
+
+Les documents juridiques et coordonnées de contact sont à fournir ; les liens correspondants sont marqués « À publier ». Détails : [docs/homepage.md](docs/homepage.md).
