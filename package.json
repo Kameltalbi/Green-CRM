@@ -1,0 +1,33 @@
+{
+  "name": "ciblix",
+  "version": "1.0.0",
+  "description": "Ciblix — CRM SaaS collaboratif pour le suivi des contacts, échanges et relances",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test:ui": "node tests/live-browser.cjs",
+    "test": "node --test --test-concurrency=1 tests/api/*.test.js",
+    "db:migrate": "node scripts/migrate.js",
+    "db:local": "node scripts/local-db.js",
+    "invite:admin": "node scripts/invite-admin.js",
+    "test:visual": "node tests/visual-audit.cjs",
+    "audit:css": "node scripts/audit-css.cjs",
+    "auth:local": "node scripts/configure-auth-local.js"
+  },
+  "dependencies": {
+    "better-auth": "^1.7.14",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^18.0.9",
+    "express": "^4.19.2",
+    "express-rate-limit": "^8.7.1",
+    "google-auth-library": "^11.3.1",
+    "helmet": "^8.3.0",
+    "nodemailer": "^10.2.1",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "axe-core": "^4.14.0",
+    "postcss": "^8.5.32"
+  }
+}

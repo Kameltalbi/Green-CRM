@@ -1,0 +1,42 @@
+[
+  {
+    "id": "c-101",
+    "name": "Alicia Morgan",
+    "company": "Northwind Studio",
+    "email": "alicia@northwindstudio.com",
+    "phone": "+1 (415) 555-0147",
+    "status": "Qualified",
+    "value": 24000,
+    "notes": "Interested in a renewal package for 3 locations."
+  },
+  {
+    "id": "c-102",
+    "name": "Daniel Brooks",
+    "company": "Brightlane Logistics",
+    "email": "daniel@brightlane.co",
+    "phone": "+1 (312) 555-2204",
+    "status": "Proposal",
+    "value": 18500,
+    "notes": "Needs onboarding support for a mid-market rollout."
+  },
+  {
+    "id": "c-103",
+    "name": "Priya Shah",
+    "company": "Cinder & Co.",
+    "email": "priya@cinderco.com",
+    "phone": "+1 (206) 555-6333",
+    "status": "Customer",
+    "value": 32500,
+    "notes": "Strong upsell potential for automation add-ons."
+  },
+  {
+    "id": "c-104",
+    "name": "Marco Silva",
+    "company": "Harbor Peak",
+    "email": "marco@harborpeak.io",
+    "phone": "+1 (503) 555-1980",
+    "status": "New",
+    "value": 8900,
+    "notes": "Initial discovery call completed; waiting on budget approval."
+  }
+]
