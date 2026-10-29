@@ -1,53 +1,64 @@
-/* Public product overview: concise copy, working routes and optional detail. */
-function buildHomepageMarkup({brandMarkup=brand,drawIcon=icon}={}){
-  const icon=drawIcon;
-  const capture=(file,alt)=>`<a class="product-capture-link" href="/assets/product/${file}.png" target="_blank" rel="noopener"><img src="/assets/product/${file}.png" width="1440" height="1080" loading="lazy" decoding="async" alt="${alt}"></a>`;
-  const faq=[
-    ['Que permet Ciblix ?','Contacts, entreprises, notes, relances et travail en équipe, dans un espace partagé.'],
-    ['Comment créer mon espace ?','Créez votre compte, vérifiez votre e-mail, puis indiquez le nom de votre entreprise. Vous pourrez ensuite inviter vos collaborateurs.'],
-    ['Qui peut accéder aux données ?','Les membres autorisés de votre organisation. Les administrateurs gèrent les invitations, les accès et les suppressions définitives.'],
-    ['Gmail est-il disponible ?','Pas encore. Les notes et l’historique des actions Ciblix sont disponibles. L’intégration Gmail reste à venir.'],
-    ['Les relances envoient-elles des e-mails ?','Non. Vous pouvez planifier une action et conserver un brouillon local, sans envoi automatique.'],
-    ['Puis-je utiliser Ciblix sur mobile ?','Oui, dans le navigateur. Application Android · À venir.'],
-    ['Mes données sont-elles conservées ?','Les fiches, notes et relances sont enregistrées et restent disponibles après déconnexion.'],
-    ['Quels secteurs sont concernés ?','TPE, PME, consultants et petites équipes qui souhaitent suivre leurs contacts sans pipeline complexe, devis ou facturation.']
+/* Public landing page: commercial sections, one photograph, no product screenshots. */
+const homeEscape = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+
+function buildHomepageMarkup({ drawIcon = typeof icon === 'function' ? icon : null, translate = typeof CiblixI18n !== 'undefined' ? key => CiblixI18n.t(key) : null, language = typeof CiblixI18n !== 'undefined' ? CiblixI18n.language : 'fr' } = {}) {
+  if (!drawIcon || !translate) throw Error('La homepage nécessite les icônes et les traductions.');
+  const text = key => homeEscape(translate(key));
+  const logo = `<a class="brand" href="/" aria-label="${text('home')}">${drawIcon('leaf')}ciblix<span>.</span></a>`;
+  const menuIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>`;
+  const benefits = [['people', 'benefit1Title', 'benefit1Text'], ['clock', 'benefit2Title', 'benefit2Text'], ['building', 'benefit3Title', 'benefit3Text']];
+  const blocks = [
+    ['contacts', 'people', 'block1Title', ['block1a', 'block1b', 'block1c', 'block1d']],
+    ['relances', 'clock', 'block2Title', ['block2a', 'block2b', 'block2c', 'block2d']],
+    ['collaboration', 'building', 'block3Title', ['block3a', 'block3b', 'block3c', 'block3d']]
   ];
-  return `<div class="marketing-page public-page" data-home-version="3"><a class="home-skip" href="#contenu">Aller au contenu</a><header class="marketing-header"><div class="home-header-inner">${brandMarkup}<button class="home-menu-toggle icon-button" id="home-menu-toggle" aria-expanded="false" aria-controls="home-menu" aria-label="Ouvrir le menu">${icon('grid')}</button><div class="home-menu" id="home-menu"><nav class="home-nav" aria-label="Navigation principale"><details class="home-dropdown"><summary>Fonctionnalités <span aria-hidden="true">⌄</span></summary><div class="home-dropdown-panel"><a href="#contacts">Contacts & entreprises</a><a href="#relances">Relances</a><a href="#equipe">Collaboration</a><a href="#produit">Aperçu du produit</a></div></details><details class="home-dropdown"><summary>Solutions <span aria-hidden="true">⌄</span></summary><div class="home-dropdown-panel"><a href="#industrie">Industrie</a><a href="#services">Services</a><a href="#conseil">Conseil</a><a href="#associations">Associations</a><a href="#mobilite">Mobile</a></div></details><a href="#faq">FAQ</a></nav><div class="public-auth-actions"><a class="text-link" href="/connexion">Se connecter</a><a class="button small" href="/inscription">Créer un compte</a></div></div></div></header><main id="contenu">
-  <section class="home-hero hero" aria-labelledby="home-title"><div class="home-container home-hero-grid"><div class="home-hero-copy"><h1 id="home-title">Vos contacts.<br>Vos prochaines actions.</h1><p>Contacts, notes et relances partagés avec votre équipe.</p><div class="home-actions hero-actions"><a class="button" href="/inscription">Créer un compte</a><a class="text-link" href="#produit">Voir le produit ${icon('arrow')}</a></div></div><div class="home-product-stage"><figure class="home-hero-image"><img src="/assets/presentation-tableau-de-bord.jpg" alt="Équipe en réunion autour du tableau de bord Ciblix" width="1024" height="682" fetchpriority="high" loading="eager" decoding="async"></figure></div></div></section>
-  <section class="home-section" id="produit" aria-labelledby="product-title"><div class="home-container"><div class="home-section-heading home-heading-left"><h2 id="product-title">L’essentiel du suivi commercial</h2></div><div class="home-feature-grid"><article id="contacts">${icon('people')}<h3>Contacts et entreprises</h3><p>Coordonnées, notes et historique.</p></article><article id="relances">${icon('clock')}<h3>Relances</h3><p>Échéances, responsables et prochaines actions.</p></article><article id="equipe">${icon('building')}<h3>Collaboration</h3><p>Fiches partagées et accès par organisation.</p></article></div><div class="home-overview">${capture('contacts','Répertoire Ciblix avec recherche, filtres et pagination')}</div><details class="home-more-product"><summary>Voir les fiches et les accès</summary><div class="home-gallery">${capture('contact-detail','Fiche contact : coordonnées, notes et historique')}${capture('entreprise','Fiche entreprise')}${capture('relances','Liste des relances')}${capture('equipe','Collaborateurs et invitations')}</div><p>Captures du produit · données de démonstration.</p></details></div></section>
-  <section class="home-section home-section-soft" id="solutions" aria-labelledby="solutions-title"><div class="home-container"><div class="home-section-heading home-heading-left"><h2 id="solutions-title">Pour les petites équipes</h2></div><div class="home-sector-grid">${[['industrie','Industrie'],['services','Services'],['conseil','Conseil'],['associations','Associations']].map(([id,name])=>`<article id="${id}"><h3>${name}</h3></article>`).join('')}</div></div></section>
-  <section class="home-section" id="mobilite" aria-labelledby="mobile-title"><div class="home-container home-mobile-summary"><div><h2 id="mobile-title">Sur ordinateur et mobile</h2><p>Les mêmes données, depuis votre navigateur.</p><small>Application Android · À venir.</small></div><details class="home-more-product"><summary>Voir l’interface mobile</summary><a href="/assets/product/mobile.png" target="_blank" rel="noopener"><img src="/assets/product/mobile.png" alt="Répertoire Ciblix sur mobile" width="390" height="1080" loading="lazy"></a></details></div></section>
-  <section class="home-section home-section-soft" id="faq" aria-labelledby="faq-title"><div class="home-container"><div class="home-section-heading home-heading-left"><h2 id="faq-title">Questions fréquentes</h2></div><div class="home-faq-grid">${faq.map(([question,answer],index)=>`<details class="home-faq-item" ${index===3?'id="integrations"':''}><summary>${question}<span aria-hidden="true">＋</span></summary><p>${answer}</p></details>`).join('')}</div></div></section>
-  <section class="home-final-cta closing" id="commencer" aria-labelledby="start-title"><div class="home-container"><h2 id="start-title">Créer votre espace Ciblix</h2><a class="button light" href="/inscription">Créer un compte</a></div></section></main>
-  <footer class="home-footer"><div class="home-container"><div class="home-footer-columns"><nav aria-label="Produit"><h2>Produit</h2><a href="#produit">Aperçu</a><a href="#contacts">Contacts & entreprises</a><a href="#relances">Relances</a><a href="#equipe">Collaboration</a><a href="#integrations">Gmail · À venir</a></nav><nav aria-label="Ressources"><h2>Ressources</h2><a href="#faq">FAQ</a><a href="#solutions">Solutions</a><a href="#mobilite">Mobile</a></nav><nav aria-label="Entreprise"><h2>Ciblix</h2><a href="#a-propos" data-home-info="a-propos">À propos</a><a href="#contact" data-home-info="contact">Contact · À publier</a><a href="/connexion">Se connecter</a></nav><nav aria-label="Informations légales"><h2>Informations légales</h2><a href="#conditions-generales" data-home-info="conditions-generales">Conditions · À publier</a><a href="#confidentialite" data-home-info="confidentialite">Confidentialité · À publier</a><a href="#mentions-legales" data-home-info="mentions-legales">Mentions légales · À publier</a></nav></div><div class="home-footer-bottom"><span>© ${new Date().getFullYear()} Ciblix</span><a href="#contenu">Retour en haut ↑</a></div></div></footer></div>`;
+  const steps = [['1', 'step1Title', 'step1Text'], ['2', 'step2Title', 'step2Text'], ['3', 'step3Title', 'step3Text']];
+  const audiences = [['building', 'audience1Title', 'audience1Text'], ['people', 'audience2Title', 'audience2Text'], ['clock', 'audience3Title', 'audience3Text'], ['grid', 'audience4Title', 'audience4Text']];
+  const reasons = [['check', 'why1Title', 'why1Text'], ['search', 'why2Title', 'why2Text'], ['building', 'why3Title', 'why3Text']];
+  const questions = [['faq1q', 'faq1a'], ['faq2q', 'faq2a'], ['faq3q', 'faq3a']];
+  const languageSelect = id => `<label class="home-language"><span class="sr-only">${text('language')}</span><select id="${id}" aria-label="${text('language')}"><option value="fr" ${language === 'fr' ? 'selected' : ''}>FR</option><option value="en" ${language === 'en' ? 'selected' : ''}>EN</option></select></label>`;
+  const footerColumns = [
+    ['homeFooterProduct', [['#fonctionnalites', 'homeNavFeatures'], ['#contacts', 'block1Title'], ['#relances', 'block2Title'], ['#collaboration', 'block3Title']]],
+    ['homeFooterResources', [['#comment', 'homeNavHow'], ['#questions', 'faqTitle']]],
+    ['homeFooterAccount', [['/inscription', 'signup'], ['/connexion', 'login']]]
+  ];
+  return `<div class="marketing-page public-page" data-home-version="7" data-lang="${homeEscape(language)}"><a class="home-skip" href="#contenu">${text('homeSkip')}</a><header class="marketing-header"><div class="home-header-inner">${logo}<button class="home-menu-toggle" id="home-menu-toggle" type="button" aria-expanded="false" aria-controls="home-menu" aria-label="${text('homeOpenMenu')}">${menuIcon}</button><div class="home-menu" id="home-menu"><nav class="home-nav" aria-label="${text('homeMainNav')}"><a href="#fonctionnalites">${text('homeNavFeatures')}</a><a href="#comment">${text('homeNavHow')}</a></nav><div class="public-auth-actions"><a class="text-link" href="/connexion">${text('login')}</a>${languageSelect('home-language')}<a class="button small" href="/inscription">${text('signup')}</a></div></div></div></header><main id="contenu">
+  <section class="home-hero hero" aria-labelledby="home-title"><div class="home-container home-hero-grid"><div class="home-hero-copy"><h1 id="home-title">${text('homeLine1')}<br>${text('homeLine2')}<br>${text('homeLine3')}</h1><p>${text('homeSubtitle')}</p><div class="home-actions"><a class="button" href="/inscription">${text('createAccount')}</a><a class="text-link" href="#fonctionnalites">${text('homeDiscover')}</a></div></div><figure class="home-hero-image"><img src="/assets/presentation-tableau-de-bord.jpg" alt="${text('homeHeroAlt')}" width="1024" height="682" fetchpriority="high" loading="eager" decoding="async"></figure></div></section>
+  <section class="home-band" aria-labelledby="benefits-title"><div class="home-container"><h2 id="benefits-title">${text('benefitsTitle')}</h2><ul class="home-benefit-row">${benefits.map(([name, title, description]) => `<li>${drawIcon(name)}<div><h3>${text(title)}</h3><p>${text(description)}</p></div></li>`).join('')}</ul></div></section>
+  <section class="home-band home-band-features" id="fonctionnalites" aria-labelledby="features-title"><div class="home-container"><h2 id="features-title">${text('featuresTitle')}</h2><div class="home-blocks">${blocks.map(([id, name, title, items]) => `<article class="home-block" id="${id}">${drawIcon(name)}<h3>${text(title)}</h3><ul>${items.map(item => `<li>${drawIcon('check')}<span>${text(item)}</span></li>`).join('')}</ul></article>`).join('')}</div></div></section>
+  <section class="home-band" id="comment" aria-labelledby="steps-title"><div class="home-container"><h2 id="steps-title">${text('stepsTitle')}</h2><ol class="home-steps">${steps.map(([number, title, description]) => `<li class="home-step"><span class="home-step-index">${number}</span><h3>${text(title)}</h3><p>${text(description)}</p></li>`).join('')}</ol></div></section>
+  <section class="home-band home-band-muted" aria-labelledby="audience-title"><div class="home-container"><h2 id="audience-title">${text('audienceTitle')}</h2><div class="home-audience">${audiences.map(([name, title, description]) => `<article>${drawIcon(name)}<div><h3>${text(title)}</h3><p>${text(description)}</p></div></article>`).join('')}</div></div></section>
+  <section class="home-band home-band-soft" aria-labelledby="why-title"><div class="home-container"><h2 id="why-title">${text('whyTitle')}</h2><ul class="home-why">${reasons.map(([name, title, description]) => `<li>${drawIcon(name)}<div><h3>${text(title)}</h3><p>${text(description)}</p></div></li>`).join('')}</ul></div></section>
+  <section class="home-band" id="questions" aria-labelledby="faq-title"><div class="home-container home-faq-layout"><h2 id="faq-title">${text('faqTitle')}</h2><div class="home-faq">${questions.map(([question, answer]) => `<details class="home-faq-item"><summary>${text(question)}<span aria-hidden="true">+</span></summary><p>${text(answer)}</p></details>`).join('')}</div></div></section>
+  <section class="home-cta" aria-labelledby="cta-title"><div class="home-container home-cta-inner"><div class="home-cta-copy"><h2 id="cta-title">${text('homeCta')}<br><span>${text('homeCtaNext')}</span></h2><p>${text('homeCtaBody')} <strong>${text('homeCtaEmphasis')}</strong>.</p></div><a class="button light" href="#fonctionnalites">${text('homeCtaButton')}</a></div></section>
+  </main><footer class="home-footer"><div class="home-container home-footer-main"><div class="home-footer-brand">${logo}<p>${text('homeFooterText')}</p></div><div class="home-footer-links">${footerColumns.map(([label, links]) => `<nav aria-label="${text(label)}"><h2>${text(label)}</h2>${links.map(([href, key]) => `<a href="${href}">${text(key)}</a>`).join('')}</nav>`).join('')}</div></div><div class="home-container home-footer-bottom"><span>© ${new Date().getFullYear()} Ciblix</span>${languageSelect('home-language-footer')}</div></footer></div>`;
 }
+
 function renderPublicHomepage() {
-  document.title = 'Ciblix — Contacts et relances';
-  if (!document.querySelector('[data-home-version="3"]')) app.innerHTML = buildHomepageMarkup();
+  const restoreLanguage = ['home-language', 'home-language-footer'].includes(document.activeElement?.id) ? document.activeElement.id : '';
+  const language = CiblixI18n.language;
+  document.documentElement.lang = language;
+  document.title = CiblixI18n.t('homeTitle');
+  const current = document.querySelector('[data-home-version="7"]');
+  if (!current || current.dataset.lang !== language) app.innerHTML = buildHomepageMarkup();
   window.ciblixHomepageEvents?.abort();
   const events = new AbortController();
   window.ciblixHomepageEvents = events;
   const page = document.querySelector('.marketing-page');
   const toggle = page.querySelector('#home-menu-toggle');
   const menu = page.querySelector('#home-menu');
-  const closeMenu = () => { toggle.setAttribute('aria-expanded', 'false'); toggle.setAttribute('aria-label', 'Ouvrir le menu'); menu.classList.remove('is-open'); };
-  const closeDropdowns = except => page.querySelectorAll('.home-dropdown[open]').forEach(d => { if (d !== except) d.open = false; });
-  toggle.addEventListener('click', () => { const open = toggle.getAttribute('aria-expanded') !== 'true'; toggle.setAttribute('aria-expanded', String(open)); toggle.setAttribute('aria-label', open ? 'Fermer le menu' : 'Ouvrir le menu'); menu.classList.toggle('is-open', open); }, { signal: events.signal });
-  page.querySelectorAll('.home-dropdown').forEach(d => d.addEventListener('toggle', () => { if (d.open) closeDropdowns(d); }, { signal: events.signal }));
-  page.querySelectorAll('a[href^="#"]').forEach(a => a.addEventListener('click', () => { closeMenu(); closeDropdowns(); }, { signal: events.signal }));
-  document.addEventListener('keydown', e => { if (!page.isConnected) return events.abort(); if (e.key === 'Escape') { const wasOpen = toggle.getAttribute('aria-expanded') === 'true'; const dropdown = page.querySelector('.home-dropdown[open]'); closeMenu(); closeDropdowns(); if (wasOpen) toggle.focus(); else dropdown?.querySelector('summary').focus(); } }, { signal: events.signal });
-  document.addEventListener('click', e => { if (!page.isConnected) return events.abort(); if (!e.target.closest('.home-dropdown')) closeDropdowns(); if (!e.target.closest('.marketing-header')) closeMenu(); }, { signal: events.signal });
-  const information = {
-    'a-propos': ['À propos de Ciblix', '<p>Ciblix est un CRM collaboratif destiné aux entreprises qui souhaitent centraliser leurs contacts, leurs notes et leurs actions de suivi.</p><p>Le produit est en développement. Les fonctions Gmail et l’application Android installable sont présentées comme « À venir » tant qu’elles ne sont pas disponibles.</p>'],
-    'contact': ['Contact — informations à publier', '<p>Aucune adresse de contact publique n’a encore été fournie pour cette page.</p><p>Les coordonnées de l’équipe Ciblix seront publiées ici après validation. Cette page ne permet pas encore d’envoyer un message.</p>'],
-    'conditions-generales': ['Conditions générales — à publier', '<p>Les conditions générales validées n’ont pas encore été fournies pour publication.</p><p>Le document sera accessible à cet emplacement après validation.</p>'],
-    'confidentialite': ['Confidentialité — document à publier', '<p>La politique de confidentialité officielle n’a pas encore été fournie pour publication.</p><p>Les informations concernant le responsable du traitement, les durées de conservation et les modalités d’exercice des droits doivent être confirmées avant publication du document.</p>'],
-    'mentions-legales': ['Mentions légales — à publier', '<p>Les informations légales de l’éditeur et de l’hébergement n’ont pas encore été fournies pour publication.</p><p>Les coordonnées légales seront accessibles ici après validation.</p>']
-  };
-  const openInfo = key => { const value = information[key]; if (!value) return; const dialog = document.querySelector('#detail'); dialog.classList.remove('contact-drawer'); document.querySelector('#detail-content').innerHTML = `<h2 id="detail-title">${value[0]}</h2>${value[1]}`; dialog.showModal(); };
-  page.querySelectorAll('[data-home-info]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); history.replaceState({}, '', a.getAttribute('href')); openInfo(a.dataset.homeInfo); }, { signal: events.signal }));
-  window.addEventListener('hashchange', () => { if (!page.isConnected) return events.abort(); openInfo(location.hash.slice(1)); }, { signal: events.signal });
-  document.querySelector('#detail').addEventListener('close', () => { if (information[location.hash.slice(1)]) history.replaceState({}, '', '/'); }, { signal: events.signal });
-  openInfo(location.hash.slice(1));
+  const closeMenu = () => { toggle.setAttribute('aria-expanded', 'false'); toggle.setAttribute('aria-label', CiblixI18n.t('homeOpenMenu')); menu.classList.remove('is-open'); };
+  toggle.addEventListener('click', () => {
+    const open = toggle.getAttribute('aria-expanded') !== 'true';
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', CiblixI18n.t(open ? 'homeCloseMenu' : 'homeOpenMenu'));
+    menu.classList.toggle('is-open', open);
+  }, { signal: events.signal });
+  page.querySelectorAll('a[href^="#"]').forEach(link => link.addEventListener('click', closeMenu, { signal: events.signal }));
+  document.addEventListener('keydown', event => { if (!page.isConnected) return events.abort(); if (event.key === 'Escape') closeMenu(); }, { signal: events.signal });
+  document.addEventListener('click', event => { if (!page.isConnected) return events.abort(); if (!event.target.closest('.marketing-header')) closeMenu(); }, { signal: events.signal });
+  page.querySelectorAll('#home-language, #home-language-footer').forEach(select => select.addEventListener('change', event => { CiblixI18n.setLanguage(event.target.value); renderPublicHomepage(); }, { signal: events.signal }));
+  if (restoreLanguage) page.querySelector('#' + restoreLanguage).focus();
 }
+
 if (typeof module !== 'undefined' && module.exports) module.exports = { buildHomepageMarkup };

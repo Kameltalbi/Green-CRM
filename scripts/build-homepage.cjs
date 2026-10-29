@@ -3,19 +3,22 @@ const path = require('node:path');
 const vm = require('node:vm');
 const root = path.join(__dirname, '..');
 const common = fs.readFileSync(path.join(root, 'public/app.js'), 'utf8').split('let reminders=')[0];
-const { brand, icon } = vm.runInNewContext(common + '\n({brand,icon})', { document: { querySelector: () => ({}) } });
+const { icon } = vm.runInNewContext(common + '\n({icon})', { document: { querySelector: () => ({}) } });
+const i18nContext = { window: {}, URLSearchParams, location: { search: '' }, localStorage: { getItem() { return null; }, setItem() {} } };
+vm.runInNewContext(fs.readFileSync(path.join(root, 'public/i18n.js'), 'utf8'), i18nContext);
+const translate = key => i18nContext.window.CiblixI18n.t(key);
 const { buildHomepageMarkup } = require('../public/homepage');
-const markup = buildHomepageMarkup({ brandMarkup: brand, drawIcon: icon });
+const markup = buildHomepageMarkup({ drawIcon: icon, translate, language: 'fr' });
 const html = `<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#14532D">
-<title>Ciblix — Contacts et relances</title>
-<meta name="description" content="Centralisez vos contacts, partagez vos notes et organisez vos relances avec Ciblix, le CRM collaboratif pour votre équipe. Gmail et Android installable à venir.">
+<title>${translate('homeTitle')}</title>
+<meta name="description" content="${translate('homeSubtitle')}">
 <meta property="og:type" content="website"><meta property="og:locale" content="fr_TN">
-<meta property="og:title" content="Ciblix — Contacts et relances">
-<meta property="og:description" content="Un espace partagé pour vos contacts, vos notes et vos prochaines actions. Découvrez les fonctions de Ciblix et créez votre compte.">
+<meta property="og:title" content="${translate('homeTitle')}">
+<meta property="og:description" content="${translate('homeSubtitle')}">
 <link rel="preload" href="/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/homepage.css">
 </head>
@@ -25,4 +28,4 @@ const html = `<!DOCTYPE html>
 </body></html>
 `;
 fs.writeFileSync(path.join(root, 'public/index.html'), html);
-console.log('Homepage pré-rendue : 6 sections, aucun tarif.');
+console.log('Homepage pré-rendue : hero, trois fonctions, appel à l’action.');

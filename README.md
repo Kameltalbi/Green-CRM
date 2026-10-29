@@ -100,12 +100,10 @@ La migration 006 ajoute seulement des index. Exécuter `npm run db:migrate` avan
 
 Gmail, calcul des réponses, synchronisation et brouillons Gmail restent hors périmètre, de même qu’Android. Les anciennes maquettes `pages.js`, `compliance.js`, `dashboard.js` ne sont plus chargées. Les clients actifs sont `app.js` (composants publics), `auth-ui.js` et `live.js`.
 
-## Homepage publique complète
+## Homepage publique
 
-La vitrine comporte 11 sections (sans tarifs), un header sticky avec menus déroulants, un menu mobile, huit questions de FAQ interactives et un footer à quatre colonnes. Gmail et Android installable sont explicitement « À venir ». Les captures agrandissables sont celles du produit réel avec des données de test.
+La vitrine est une landing commerciale : navigation, hero avec la photographie de l’équipe, bénéfices, fonctions, parcours, publics, raisons de choisir Ciblix, FAQ et appel à l’action. Aucune capture du CRM n’est affichée. Le français et l’anglais suivent la préférence `ciblix.language`. L’import de contacts n’est pas annoncé : il n’est pas disponible.
 
-Le contenu est pré-rendu dans `public/index.html` : exécuter `npm run build` après toute modification de `public/homepage.js`. La feuille `public/homepage.css` complète le système commun uniquement pour la mise en page publique. Aucun backend ni écran métier n’est modifié par cette refonte. `npm run test:homepage` contrôle liens, CTA, menus, FAQ, responsive et contrastes.
-
-Les documents juridiques et coordonnées de contact sont à fournir ; les liens correspondants sont marqués « À publier ». Détails : [docs/homepage.md](docs/homepage.md).
+Le contenu est pré-rendu dans `public/index.html` : exécuter `npm run build` après toute modification de `public/homepage.js`. La feuille `public/homepage.css` complète le système commun uniquement pour la mise en page publique. Aucun backend ni écran métier n’est modifié par cette page. `npm run test:homepage` contrôle les liens, la langue, le responsive et les contrastes.
 
 La refonte ciblée des pages d’authentification est documentée dans [docs/refonte-auth.md](docs/refonte-auth.md). Les dictionnaires FR/EN et la préférence de langue sont centralisés dans `public/i18n.js` ; les autres modules restent en français.
