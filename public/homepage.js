@@ -4,7 +4,7 @@ const homeEscape = value => String(value ?? '').replace(/[&<>"']/g, character =>
 function buildHomepageMarkup({ drawIcon = typeof icon === 'function' ? icon : null, translate = typeof CiblixI18n !== 'undefined' ? key => CiblixI18n.t(key) : null, language = typeof CiblixI18n !== 'undefined' ? CiblixI18n.language : 'fr' } = {}) {
   if (!drawIcon || !translate) throw Error('La homepage nécessite les icônes et les traductions.');
   const text = key => homeEscape(translate(key));
-  const logo = `<a class="brand" href="/" aria-label="${text('home')}">${drawIcon('leaf')}ciblix<span>.</span></a>`;
+  const logo = `<a class="brand" href="/" aria-label="${text('home')}"><img class="brand-wordmark" src="/assets/logo-ciblix.png" alt=""></a>`;
   const menuIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>`;
   const benefits = [['people', 'benefit1Title', 'benefit1Text'], ['clock', 'benefit2Title', 'benefit2Text'], ['building', 'benefit3Title', 'benefit3Text']];
   const blocks = [

@@ -13,12 +13,14 @@ const html = `<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#14532D">
+<meta name="theme-color" content="#013BE5">
 <title>${translate('homeTitle')}</title>
 <meta name="description" content="${translate('homeSubtitle')}">
 <meta property="og:type" content="website"><meta property="og:locale" content="fr_TN">
 <meta property="og:title" content="${translate('homeTitle')}">
 <meta property="og:description" content="${translate('homeSubtitle')}">
+<link rel="icon" href="/assets/icon-ciblix.png" type="image/png">
+<link rel="apple-touch-icon" href="/assets/icon-ciblix.png">
 <link rel="preload" href="/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/homepage.css">
 </head>

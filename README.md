@@ -75,7 +75,7 @@ L’API JSON `/api/v1` est réutilisable par un futur client Android ; le parcou
 
 Inter est auto-hébergée avec sa licence libre. Une feuille CSS lisible remplace les anciennes règles locales accumulées : corps 16 px, secondaires/labels/tableaux 14–16 px, champs/boutons 16 px, sections 22–28 px, titres 36–40 px. Les tailles ne diminuent pas sur mobile ou au zoom.
 
-Palette : texte `#1F2937`, secondaire `#475569`, vert `#14532D`, fond `#F8FAF9`, cartes blanches, bordures `#CBD5D1`. Les mêmes règles de composants sont appliquées partout. La refonte n’ajoute pas de fonctionnalité.
+Palette : texte `#1F2937`, secondaire `#475569`, bleu `#013BE5`, vert `#07C00D`, fond `#F5F7FC`, cartes blanches, bordures `#D5DCEB`. Les mêmes règles de composants sont appliquées partout. La refonte n’ajoute pas de fonctionnalité.
 
 Voir [docs/rapport-lisibilite.md](docs/rapport-lisibilite.md) pour l’audit, les résultats et les limites de mesure.
 

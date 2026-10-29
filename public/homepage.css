@@ -3,17 +3,17 @@
 .marketing-page .home-container { width: min(1180px, calc(100% - 64px)); margin-inline: auto; }
 .marketing-page .home-hero.hero { display: block; max-width: none; padding: 0; margin: 0; background: var(--bg); }
 .marketing-page section[id], .marketing-page article[id] { scroll-margin-top: 84px; }
-.home-skip { position: fixed; left: 16px; top: -100px; z-index: 50; background: var(--green); color: var(--white); padding: 12px 18px; border-radius: 8px; }
+.home-skip { position: fixed; left: 16px; top: -100px; z-index: 50; background: var(--blue); color: var(--white); padding: 12px 18px; border-radius: 8px; }
 .home-skip:focus { top: 12px; }
 .marketing-header { position: sticky; top: 0; z-index: 20; background: var(--white); border-bottom: 1px solid var(--line); }
 .home-header-inner { width: min(1180px, calc(100% - 48px)); margin: auto; min-height: 68px; display: flex; align-items: center; gap: 20px; position: relative; }
-.marketing-header .brand { font-size: 1.5rem; }
-.marketing-header .brand svg { width: 24px; height: 26px; }
-.home-menu-toggle { display: none; margin-left: auto; min-width: 44px; min-height: 44px; color: var(--green); }
+.marketing-header .brand-icon, .home-footer .brand-icon { height: 40px; width: 40px; }
+.marketing-header .brand-wordmark, .home-footer .brand-wordmark { height: 26px; }
+.home-menu-toggle { display: none; margin-left: auto; min-width: 44px; min-height: 44px; color: var(--blue); }
 .home-menu { display: flex; align-items: center; gap: 28px; margin-left: auto; min-width: 0; }
 .home-nav { display: flex; align-items: center; gap: 22px; }
 .home-nav a { color: var(--text); font-weight: 600; min-height: 44px; display: inline-flex; align-items: center; }
-.home-nav a:hover { color: var(--green); text-decoration: none; }
+.home-nav a:hover { color: var(--blue); text-decoration: none; }
 .marketing-header .public-auth-actions { width: auto; flex-wrap: nowrap; gap: 8px 18px; }
 .marketing-header .public-auth-actions > a { flex: none; width: auto; }
 .home-language select { width: auto; min-height: 40px; padding: 6px 28px 6px 10px; border-color: transparent; background-color: transparent; color: var(--text); font-size: .875rem; font-weight: 600; }
@@ -39,35 +39,34 @@
 .home-steps { list-style: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; margin: 0; padding: 8px 0 0; position: relative; }
 .home-steps::before { content: ''; position: absolute; top: 30px; left: 22px; right: 22px; height: 1px; background: var(--line); }
 .home-step { position: relative; min-width: 0; }
-.home-step-index { position: relative; z-index: 1; display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 16px; border: 1px solid var(--green); border-radius: 50%; background: var(--white); color: var(--green); font-size: 1rem; font-weight: 700; }
+.home-step-index { position: relative; z-index: 1; display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 16px; border: 1px solid var(--green); border-radius: 50%; background: var(--white); color: var(--blue); font-size: 1rem; font-weight: 700; }
 .home-band-muted { background: var(--bg); }
 .home-audience { display: grid; grid-template-columns: 1fr 1fr; gap: 28px 40px; }
-.home-band-soft { background: var(--soft); }
+.home-band-soft { background: var(--mint); }
 .home-faq-layout { display: grid; grid-template-columns: minmax(0, .75fr) minmax(0, 1.25fr); gap: 40px; align-items: start; }
 .home-faq-layout h2 { margin-bottom: 0; }
 .home-faq-item { border-bottom: 1px solid var(--line); }
 .home-faq-item summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 52px; padding: 12px 0; cursor: pointer; font-size: 1rem; font-weight: 650; list-style: none; }
 .home-faq-item summary::-webkit-details-marker { display: none; }
-.home-faq-item summary span { color: var(--green); font-size: 1.25rem; line-height: 1; }
+.home-faq-item summary span { color: var(--blue); font-size: 1.25rem; line-height: 1; }
 .home-faq-item p { margin: 0 0 16px; color: var(--text-secondary); max-width: 62ch; }
-.home-cta { background: var(--green); color: var(--white); }
+.home-cta { background: var(--blue); color: var(--white); }
 .home-cta-inner { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 32px; padding-block: 56px; }
 .home-cta-copy { max-width: 68ch; }
 .home-cta h2 { margin: 0 0 16px; max-width: 16em; font-size: 2rem; line-height: 1.25; color: var(--white); }
 .home-cta h2 span { display: block; }
 .home-cta p { margin: 0; color: var(--white); }
 .home-cta strong { font-weight: 700; }
-.home-footer { background: #F2F4F3; color: var(--text); }
+.home-footer { background: #F3F6FB; color: var(--text); }
 .home-footer .home-container { width: min(1280px, calc(100% - 64px)); }
 .home-footer-main { display: flex; align-items: flex-start; justify-content: space-between; gap: 48px; padding-block: 48px 28px; }
 .home-footer-brand { flex: 0 1 300px; min-width: 0; }
-.home-footer .brand { font-size: 1.5rem; }
 .home-footer-brand p { margin: 12px 0 0; max-width: 32ch; color: var(--text-secondary); }
 .home-footer-links { display: grid; grid-template-columns: repeat(3, max-content); gap: 28px 56px; }
 .home-footer nav { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 .home-footer h2 { margin: 0 0 8px; font-size: .875rem; line-height: 1.5; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--text-secondary); }
 .home-footer nav a { color: var(--text); min-height: 40px; display: inline-flex; align-items: center; }
-.home-footer nav a:hover { color: var(--green); text-decoration: none; }
+.home-footer nav a:hover { color: var(--blue); text-decoration: none; }
 .home-footer-bottom { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); padding-block: 16px 20px; }
 .home-footer-bottom > span { color: var(--text-secondary); font-size: .875rem; }
 .home-footer .home-language select { width: auto; min-height: 40px; padding: 6px 32px 6px 12px; border: 1px solid var(--line); border-radius: 8px; background-color: var(--white); color: var(--text); }
