@@ -1,21 +1,225 @@
-const authPages=new Set(['/inscription','/connexion','/mot-de-passe-oublie','/reinitialiser-mot-de-passe','/verification-email','/invitation','/bienvenue']);
-function authMessage(data){const messages={INVALID_EMAIL_OR_PASSWORD:'Adresse e-mail ou mot de passe incorrect.',EMAIL_NOT_VERIFIED:'Vérifiez votre adresse e-mail avant de vous connecter.',USER_ALREADY_EXISTS:'Un compte existe déjà avec cette adresse. Connectez-vous ou réinitialisez votre mot de passe.',USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL:'Si cette adresse est déjà utilisée, connectez-vous ou réinitialisez votre mot de passe.',INVALID_TOKEN:'Ce lien est invalide ou a expiré. Demandez un nouveau lien.',TOKEN_EXPIRED:'Ce lien a expiré. Demandez un nouveau lien.',PASSWORD_TOO_SHORT:'Choisissez un mot de passe d’au moins 12 caractères.',PASSWORD_TOO_LONG:'Le mot de passe doit contenir au maximum 128 caractères.',SOCIAL_ACCOUNT_ALREADY_LINKED:'Ce compte Google est déjà associé à un compte Ciblix.',ACCOUNT_NOT_FOUND:'Utilisez votre mode de connexion habituel ou demandez une réinitialisation.',FAILED_TO_SEND_VERIFICATION_EMAIL:'L’e-mail n’a pas pu être envoyé. Réessayez dans quelques instants.'};if(messages[data?.code])return messages[data.code];if(data?.message&&/[àéèêôùîç’]/i.test(data.message))return data.message;return 'La demande n’a pas abouti. Vérifiez les informations et réessayez.';}
-async function authFetch(path,body){const r=await fetch('/api/auth'+path,{method:body===undefined?'GET':'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const data=await r.json().catch(()=>({}));if(!r.ok){const error=Error(authMessage(data));error.code=data.code;throw error;}return data;}
-async function accountContext(){const r=await fetch('/api/v1/account',{credentials:'same-origin'});if(!r.ok)return null;return r.json();}
-async function accountWrite(path,body,account){const r=await fetch('/api/v1'+path,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':account.csrfToken},body:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw Error(data.message||'La demande n’a pas abouti.');return data;}
-function inviteToken(){const p=new URLSearchParams(location.search);return p.get('invitation')||(location.pathname==='/invitation'?p.get('token'):null);}
-function authLink(path,token=inviteToken()){return path+(token?'?invitation='+encodeURIComponent(token):'');}
-function afterAuthURL(token=inviteToken()){return token?'/invitation?token='+encodeURIComponent(token):'/bienvenue';}
-function authLayout({title,subtitle,body,signup=false,eyebrow='BIENVENUE CHEZ CIBLIX'}){document.title=title+' — Ciblix';app.innerHTML=`<div class="auth-shell"><header class="auth-header">${brand}<a href="/" class="text-link">Retour à l’accueil ${icon('arrow')}</a></header><main class="auth-layout"><section class="auth-story"><span class="eyebrow">LES BONNES RELATIONS COMMENCENT ICI</span><h1>Votre équipe.<br>Vos relations.<br><em>Le même élan.</em></h1><p>Les bonnes personnes, le contexte utile et la prochaine attention. Un espace simple pour avancer ensemble.</p><div class="auth-story-benefits"><span>${icon('people')} Une information partagée dans votre équipe</span><span>${icon('shield')} Un espace privé pour votre entreprise</span><span>${icon('clock')} Vos prochaines actions, au bon endroit</span></div><div class="auth-story-footer"><span class="tiny-brand">ciblix.</span><span>Moins de dispersion.<br>Plus de relations.</span></div></section><section class="auth-card"><span class="eyebrow">${esc(eyebrow)}</span><h2>${esc(title)}</h2><p class="auth-subtitle">${esc(subtitle)}</p>${body}<div class="auth-private-note">${icon('shield')} Vos données restent dans votre organisation.</div></section></main><footer class="auth-footer"><span>© ${new Date().getFullYear()} Ciblix</span><span>Le CRM collaboratif, simplement.</span></footer></div>`;bindPasswordToggles();renderMailDeliveryNotice();}
-async function renderMailDeliveryNotice(){const host=document.querySelector('.auth-card');try{const config=await(await fetch('/api/public/auth-config')).json();if(!host?.isConnected||!config.mailPreviewURL)return;const url=new URL(config.mailPreviewURL);if(!['localhost','127.0.0.1'].includes(url.hostname))return;host.querySelector('.auth-private-note').insertAdjacentHTML('beforebegin',`<div class="auth-local-mail"><strong>Boîte e-mail de test locale</strong><p>Les liens de vérification, invitations et réinitialisations arrivent ici, pas dans votre messagerie personnelle.</p><a href="${esc(url.href)}" target="_blank" rel="noopener noreferrer">Ouvrir la boîte de test ${icon('arrow')}</a></div>`);}catch{}}
-function passwordInput(label,name='password',confirm=false){return `<label class="auth-field"><span>${label}</span><span class="password-field"><input name="${name}" type="password" required minlength="12" maxlength="128" autocomplete="${confirm?'new-password':location.pathname==='/connexion'?'current-password':'new-password'}" placeholder="${location.pathname==='/connexion'?'Votre mot de passe':'Au moins 12 caractères'}"><button type="button" data-show-password="${name}" aria-label="Afficher le mot de passe" aria-pressed="false">Voir</button></span></label>`;}
-function bindPasswordToggles(){document.querySelectorAll('[data-show-password]').forEach(b=>b.onclick=()=>{const input=b.parentElement.querySelector('input'),show=input.type==='password';input.type=show?'text':'password';b.textContent=show?'Masquer':'Voir';b.setAttribute('aria-pressed',String(show));b.setAttribute('aria-label',show?'Masquer le mot de passe':'Afficher le mot de passe');});}
-function googleButton(){return `<button class="auth-google" type="button" id="auth-google"><span class="google-letter" aria-hidden="true">G</span>Continuer avec Google ${icon('arrow')}</button><div class="auth-divider"><span>ou avec votre adresse e-mail</span></div>`;}
-async function bindGoogle(){const button=document.querySelector('#auth-google');if(!button)return;try{const config=await(await fetch('/api/public/auth-config')).json();if(!config.googleEnabled){button.disabled=true;button.title='La connexion Google est en cours de configuration.';button.insertAdjacentHTML('afterend','<p class="auth-service-note">Google sera disponible après configuration. Vous pouvez utiliser votre e-mail.</p>');}}catch{}button.onclick=async()=>{button.disabled=true;try{const data=await authFetch('/sign-in/social',{provider:'google',callbackURL:afterAuthURL(),newUserCallbackURL:afterAuthURL(),errorCallbackURL:authLink('/connexion')});if(data.url)location.assign(data.url);else throw Error('La connexion Google n’a pas abouti.');}catch(e){document.querySelector('#auth-feedback').innerHTML=errorText(e.message);button.disabled=false;}};}
-async function authEntry(signup){const p=new URLSearchParams(location.search),token=inviteToken();let invitation=null;if(token){const r=await fetch('/api/public/invitations/'+encodeURIComponent(token));if(!r.ok){go('/invitation?token='+encodeURIComponent(token));return;}invitation=await r.json();}authLayout({title:signup?'Créez votre compte.':'Ravi de vous retrouver.',subtitle:signup?(invitation?'Créez votre accès pour rejoindre '+invitation.organizationName+'.':'Votre espace de travail commence ici. Quelques informations suffisent.'):'Connectez-vous pour retrouver votre équipe et vos relations.',signup,body:`<div class="auth-mode-switch"><a class="${signup?'active':''}" href="${authLink('/inscription')}">Créer un compte</a><a class="${!signup?'active':''}" href="${authLink('/connexion')}">Se connecter</a></div>${invitation?`<div class="auth-invitation-hint">${icon('people')} Invitation à rejoindre <strong>${esc(invitation.organizationName)}</strong></div>`:''}${googleButton()}<form id="auth-main-form" class="auth-form">${signup?`<label class="auth-field"><span>Votre nom complet</span><input name="name" required minlength="2" maxlength="150" autocomplete="name" placeholder="Prénom et nom"></label>${!token?'<label class="auth-field"><span>Nom de votre entreprise</span><input name="companyName" required maxlength="150" autocomplete="organization" placeholder="Le nom de votre espace partagé"></label>':''}`:''}<label class="auth-field"><span>Adresse e-mail</span><input name="email" type="email" required maxlength="254" autocomplete="email" value="${esc(invitation?.email||'')}" placeholder="vous@entreprise.tn"></label>${passwordInput('Mot de passe')}${signup?'<p class="auth-password-hint">12 caractères minimum. Évitez un mot de passe déjà utilisé ailleurs.</p>':`<div class="auth-login-options"><label><input type="checkbox" name="rememberMe" checked> Rester connecté</label><a href="${authLink('/mot-de-passe-oublie')}">Mot de passe oublié ?</a></div>`}<button class="button auth-submit" type="submit">${signup?'Créer mon compte':'Se connecter'} ${icon('arrow')}</button><div id="auth-feedback" aria-live="polite">${p.get('erreur')?errorText(p.get('erreur')):p.get('error')?errorText('La connexion n’a pas abouti. Réessayez ou utilisez votre adresse e-mail.'):''}</div></form><p class="auth-switch-copy">${signup?'Vous avez déjà un compte ?':'Vous découvrez Ciblix ?'} <a href="${authLink(signup?'/connexion':'/inscription')}">${signup?'Se connecter':'Créer un compte'}</a></p><p class="auth-gmail-note">La connexion Google identifie votre compte. Elle ne donne aucun accès à Gmail.</p>`});bindGoogle();bindForm('auth-main-form',async d=>{const callbackURL=afterAuthURL(token);if(signup){await authFetch('/sign-up/email',{name:d.name.trim(),email:d.email.trim(),password:d.password,companyName:d.companyName?.trim()||'',callbackURL});go('/verification-email?email='+encodeURIComponent(d.email.trim())+(token?'&invitation='+encodeURIComponent(token):''));}else{try{await authFetch('/sign-in/email',{email:d.email.trim(),password:d.password,rememberMe:d.rememberMe==='on',callbackURL});go(callbackURL);}catch(e){if(e.code==='EMAIL_NOT_VERIFIED'){go('/verification-email?email='+encodeURIComponent(d.email.trim())+(token?'&invitation='+encodeURIComponent(token):''));return;}throw e;}}});}
-function verificationScreen(){const p=new URLSearchParams(location.search),address=p.get('email')||'',token=inviteToken();authLayout({title:'Vérifiez votre adresse.',subtitle:'Un dernier clic pour activer votre compte.',eyebrow:'PRESQUE PRÊT',body:`<div class="auth-status-icon">${icon('mail')}</div><p class="auth-explanation">Si une inscription peut être finalisée pour <strong>${esc(address||'votre adresse e-mail')}</strong>, vous recevrez un lien de vérification. Consultez aussi vos courriers indésirables.</p><form id="resend-verification" class="auth-form">${!address?'<label class="auth-field"><span>Votre adresse e-mail</span><input name="email" required type="email" autocomplete="email"></label>':''}<button class="button auth-submit" type="submit">Renvoyer le lien ${icon('arrow')}</button><div id="auth-feedback" aria-live="polite"></div></form><p class="auth-switch-copy"><a href="${authLink('/connexion',token)}">Revenir à la connexion</a></p><p class="auth-gmail-note">Le lien est valable une heure. Votre espace sera créé après vérification de votre adresse.</p>`});bindForm('resend-verification',async d=>{await authFetch('/send-verification-email',{email:address||d.email,callbackURL:afterAuthURL(token)});document.querySelector('#auth-feedback').innerHTML='<p class="auth-success" role="status">Si cette adresse attend une vérification, un nouveau lien a été envoyé.</p>';});}
-function forgotScreen(){authLayout({title:'Retrouvons votre accès.',subtitle:'Nous vous envoyons un lien pour choisir un nouveau mot de passe.',eyebrow:'MOT DE PASSE OUBLIÉ',body:`<form id="forgot-form" class="auth-form"><label class="auth-field"><span>Adresse e-mail</span><input type="email" name="email" required autocomplete="email" placeholder="vous@entreprise.tn"></label><button class="button auth-submit" type="submit">Recevoir le lien ${icon('arrow')}</button><div id="auth-feedback" aria-live="polite"></div></form><p class="auth-switch-copy"><a href="${authLink('/connexion')}">Revenir à la connexion</a></p>`});bindForm('forgot-form',async d=>{await authFetch('/request-password-reset',{email:d.email,redirectTo:'/reinitialiser-mot-de-passe'});document.querySelector('#auth-feedback').innerHTML='<p class="auth-success" role="status">Si cette adresse correspond à un compte, vous recevrez un lien valable 30 minutes.</p>';});}
-function resetScreen(){const p=new URLSearchParams(location.search),token=p.get('token'),invalid=p.has('error')||!token;authLayout({title:'Un nouveau départ.',subtitle:'Choisissez un nouveau mot de passe pour votre compte Ciblix.',eyebrow:'RÉINITIALISATION',body:invalid?`${errorText('Ce lien est invalide ou a expiré. Demandez un nouveau lien de réinitialisation.')}<a class="button auth-submit" href="/mot-de-passe-oublie">Demander un nouveau lien ${icon('arrow')}</a>`:`<form class="auth-form" id="reset-form">${passwordInput('Nouveau mot de passe')}${passwordInput('Confirmer le mot de passe','confirmPassword',true)}<p class="auth-password-hint">Au moins 12 caractères. Les autres sessions seront déconnectées.</p><button class="button auth-submit" type="submit">Enregistrer mon mot de passe ${icon('check')}</button><div id="auth-feedback" aria-live="polite"></div></form>`});if(invalid)return;bindForm('reset-form',async d=>{if(d.password!==d.confirmPassword)throw Error('Les deux mots de passe ne correspondent pas.');await authFetch('/reset-password',{newPassword:d.password,token});authLayout({title:'Votre accès est rétabli.',subtitle:'Votre mot de passe a été modifié. Vous pouvez vous reconnecter.',body:'<div class="auth-status-icon">'+icon('check')+'</div><a class="button auth-submit" href="/connexion">Se connecter '+icon('arrow')+'</a>'});});}
-async function onboardingScreen(){const p=new URLSearchParams(location.search);if(p.has('error')){authLayout({title:'Le lien a expiré.',subtitle:'Votre adresse n’a pas pu être vérifiée.',body:errorText('Demandez un nouveau lien pour vérifier votre e-mail.')+'<a class="button auth-submit" href="/verification-email">Renvoyer un lien</a>'});return;}const account=await accountContext();if(!account){go('/connexion');return;}if(account.organizations.length){await load();go('/app');return;}authLayout({title:'Bienvenue '+account.user.name.split(' ')[0]+'.',subtitle:'Donnez un nom à votre espace. Vous en serez l’administrateur.',eyebrow:'VOTRE ENTREPRISE, VOTRE ESPACE',body:`<form id="onboarding-form" class="auth-form"><label class="auth-field"><span>Nom de votre entreprise</span><input name="companyName" required maxlength="150" autocomplete="organization" value="${esc(account.companyName)}" placeholder="Nom de votre entreprise"></label><p class="auth-explanation">Vous pourrez ensuite inviter vos collaborateurs. Vos contacts, notes et relances seront partagés uniquement dans cet espace.</p><button class="button auth-submit" type="submit">Créer mon espace ${icon('arrow')}</button><div id="auth-feedback" aria-live="polite"></div></form><button class="auth-change-account" id="auth-change-account">Utiliser un autre compte</button>`});bindForm('onboarding-form',async d=>{await accountWrite('/onboarding',{companyName:d.companyName.trim()},account);await load();go('/app');});document.querySelector('#auth-change-account').onclick=safeAction(async()=>{await authFetch('/sign-out',{});session=null;go('/connexion');});if(account.companyName){try{await accountWrite('/onboarding',{companyName:account.companyName},account);await load();go('/app');}catch(e){document.querySelector('#auth-feedback').innerHTML=errorText(e.message);}}}
-async function invitationScreen(){const token=new URLSearchParams(location.search).get('token');let invitation;try{const r=await fetch('/api/public/invitations/'+encodeURIComponent(token||''));invitation=await r.json();if(!r.ok)throw Error(invitation.message||'Ce lien est invalide.');}catch(e){authLayout({title:'Invitation indisponible.',subtitle:'Ce lien ne permet plus de rejoindre l’équipe.',body:errorText(e.message)+'<p class="auth-explanation">Demandez une nouvelle invitation à votre administrateur.</p><a class="button auth-submit" href="/connexion">Se connecter</a>'});return;}const account=await accountContext();const wrong=account&&account.user.email.toLowerCase()!==invitation.email.toLowerCase();authLayout({title:'Votre équipe vous attend.',subtitle:invitation.organizationName+' vous invite à rejoindre son espace Ciblix.',eyebrow:'UNE INVITATION PERSONNELLE',body:`<div class="auth-invite-summary">${icon('people')}<div><strong>${esc(invitation.organizationName)}</strong><span>Invitation pour ${esc(invitation.email)}</span></div></div><p class="auth-explanation">Vous partagerez les contacts, les notes et les relances avec les collaborateurs de cette entreprise.</p>${wrong?errorText('Vous êtes connecté avec '+account.user.email+'. Utilisez l’adresse invitée.'):account?'<form id="accept-invitation-form" class="auth-form"><button class="button auth-submit" type="submit">Accepter et rejoindre l’équipe '+icon('arrow')+'</button><div id="auth-feedback" aria-live="polite"></div></form>':`<a class="button auth-submit" href="${authLink('/inscription',token)}">Créer mon compte et rejoindre ${icon('arrow')}</a><p class="auth-switch-copy">Déjà un compte ? <a href="${authLink('/connexion',token)}">Se connecter</a></p>`}${account?'<button class="auth-change-account" id="auth-change-account">Utiliser un autre compte</button>':''}<p class="auth-gmail-note">Invitation valable jusqu’au ${esc(localDate(invitation.expiresAt))}. Aucun accès à Gmail n’est demandé.</p>`});if(account&&!wrong)bindForm('accept-invitation-form',async()=>{await accountWrite('/invitations/accept',{token},account);await load();go('/app');});document.querySelector('#auth-change-account')?.addEventListener('click',safeAction(async()=>{await authFetch('/sign-out',{});session=null;go('/invitation?token='+encodeURIComponent(token));}));}
-async function renderAuthPage(){const path=location.pathname;app.innerHTML='<main class="board-empty" aria-live="polite"><p>Chargement de votre accès…</p></main>';try{if(path==='/connexion'||path==='/inscription')await authEntry(path==='/inscription');else if(path==='/verification-email')verificationScreen();else if(path==='/mot-de-passe-oublie')forgotScreen();else if(path==='/reinitialiser-mot-de-passe')resetScreen();else if(path==='/bienvenue')await onboardingScreen();else if(path==='/invitation')await invitationScreen();}catch(e){authLayout({title:'Un instant…',subtitle:'Votre demande n’a pas pu être finalisée.',body:errorText(e.message)+'<a class="button auth-submit" href="/connexion">Revenir à la connexion</a>'});}}
+const authPages = new Set(['/inscription', '/connexion', '/mot-de-passe-oublie', '/reinitialiser-mot-de-passe', '/verification-email', '/invitation', '/bienvenue']);
+const authT = (key, values) => CiblixI18n.t(key, values);
+let authConfig = { googleEnabled: false, mailPreviewURL: null };
+let authView = 0;
+let completedReset = null;
+
+function authMessage(data) {
+  if (CiblixI18n.has(data?.code)) return authT(data.code);
+  if (CiblixI18n.language === 'fr' && data?.message && /[àéèêôùîç’]/i.test(data.message)) return data.message;
+  return authT('genericError');
+}
+async function authFetch(path, body) {
+  const response = await fetch('/api/auth' + path, {
+    method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) { const error = Error(authMessage(data)); error.code = data.code; throw error; }
+  return data;
+}
+async function accountContext() {
+  const response = await fetch('/api/v1/account', { credentials: 'same-origin' });
+  return response.ok ? response.json() : null;
+}
+async function accountWrite(path, body, account) {
+  const response = await fetch('/api/v1' + path, {
+    method: 'POST', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': account.csrfToken }, body: JSON.stringify(body)
+  });
+  const data = await response.json();
+  if (!response.ok) throw Error(authMessage(data));
+  return data;
+}
+function inviteToken() {
+  const params = new URLSearchParams(location.search);
+  return params.get('invitation') || (location.pathname === '/invitation' ? params.get('token') : null);
+}
+function authLink(path, token = inviteToken()) { return path + (token ? '?invitation=' + encodeURIComponent(token) : ''); }
+function afterAuthURL(token = inviteToken()) { return token ? '/invitation?token=' + encodeURIComponent(token) : '/bienvenue'; }
+function authAnchor(path, key, token = inviteToken()) { return `<a href="${authLink(path, token)}">${esc(authT(key))}</a>`; }
+function authFeedback(message, success = false) { return `<p class="${success ? 'auth-success' : 'connection-error'}" role="${success ? 'status' : 'alert'}">${esc(message)}</p>`; }
+function authLegalMarkup() {
+  // No placeholder links or invented legal documents.
+  return CiblixI18n.legalLinks.filter(link => ['privacy', 'terms', 'legal'].includes(link.key) && /^\/(?!\/|api\/)[^#]*$/.test(link.href))
+    .map(link => `<a href="${esc(link.href)}">${esc(authT(link.key))}</a>`).join('');
+}
+function authLayout({ title, subtitle, body }) {
+  document.documentElement.lang = CiblixI18n.language;
+  document.title = title + ' — Ciblix';
+  app.innerHTML = `<div class="auth-shell"><main class="auth-layout"><div class="auth-stack"><a class="brand" href="/" aria-label="${esc(authT('home'))}">${icon('leaf')}ciblix<span>.</span></a><section class="auth-card" aria-labelledby="auth-title"><h1 id="auth-title">${esc(title)}</h1><p class="auth-subtitle">${esc(subtitle)}</p>${body}</section></div></main><footer class="auth-footer"><span>© ${new Date().getFullYear()} Ciblix</span><nav aria-label="${esc(authT('legal'))}">${authLegalMarkup()}</nav><label class="auth-language"><span class="sr-only">${esc(authT('language'))}</span><select id="auth-language" aria-label="${esc(authT('language'))}"><option value="fr" ${CiblixI18n.language === 'fr' ? 'selected' : ''}>Français</option><option value="en" ${CiblixI18n.language === 'en' ? 'selected' : ''}>English</option></select></label></footer></div>`;
+  bindPasswordToggles();
+  document.querySelector('#auth-language').onchange = async event => {
+    // Keep input values in memory only, including when toggling language mid-form.
+    const path = location.pathname;
+    const values = [...document.querySelectorAll('.auth-card input')].map(input => ({ name: input.name, value: input.value }));
+    CiblixI18n.setLanguage(event.target.value);
+    const params = new URLSearchParams(location.search); params.delete('lang');
+    history.replaceState({}, '', location.pathname + (params.size ? '?' + params : ''));
+    await renderAuthPage();
+    if (location.pathname !== path) return;
+    for (const item of values) { const input = [...document.querySelectorAll('.auth-card input')].find(input => input.name === item.name); if (input) input.value = item.value; }
+    document.querySelector('#auth-language')?.focus();
+  };
+  renderMailDeliveryNotice();
+}
+function renderMailDeliveryNotice() {
+  // Development-only tool, outside the main sign-in form and collapsed by default.
+  if (!authConfig.mailPreviewURL || document.querySelector('.auth-local-mail') || ['/connexion', '/inscription'].includes(location.pathname)) return;
+  try {
+    const url = new URL(authConfig.mailPreviewURL);
+    if (!['localhost', '127.0.0.1'].includes(url.hostname) || !['http:', 'https:'].includes(url.protocol)) return;
+    document.querySelector('.auth-card').insertAdjacentHTML('beforeend', `<details class="auth-local-mail"><summary>${esc(authT('localMail'))}</summary><p>${esc(authT('localMailExplanation'))}</p><a href="${esc(url.href)}" target="_blank" rel="noopener noreferrer">${esc(authT('localMailLink'))}</a></details>`);
+  } catch {}
+}
+function passwordInput(label, name = 'password', confirm = false) {
+  const login = location.pathname === '/connexion';
+  return `<label class="auth-field" for="auth-${name}"><span>${esc(label)}</span><span class="password-field"><input id="auth-${name}" name="${name}" type="password" required minlength="12" maxlength="128" autocomplete="${confirm || !login ? 'new-password' : 'current-password'}" placeholder="${esc(authT(confirm ? 'confirmPlaceholder' : login ? 'passwordPlaceholder' : location.pathname === '/inscription' ? 'createPasswordPlaceholder' : 'newPassword'))}"><button type="button" data-show-password="${name}" aria-controls="auth-${name}" aria-label="${esc(authT('showPassword') + ': ' + label)}" aria-pressed="false">${esc(authT('show'))}</button></span></label>`;
+}
+function bindPasswordToggles() {
+  document.querySelectorAll('[data-show-password]').forEach(button => {
+    button.onclick = () => {
+      const input = document.getElementById(button.getAttribute('aria-controls'));
+      const show = input.type === 'password'; input.type = show ? 'text' : 'password';
+      button.textContent = authT(show ? 'hide' : 'show');
+      button.setAttribute('aria-pressed', String(show));
+      const label = button.closest('label').querySelector('span').textContent;
+      button.setAttribute('aria-label', authT(show ? 'hidePassword' : 'showPassword') + ': ' + label);
+    };
+  });
+}
+function bindAuthForm(id, handler) {
+  bindForm(id, async (...args) => {
+    const language = document.querySelector('#auth-language'); if (language) language.disabled = true;
+    try { await handler(...args); }
+    catch (error) {
+      const feedback = args[1].querySelector('#auth-feedback');
+      if (feedback) feedback.innerHTML = authFeedback(error.message);
+      else throw error;
+    } finally { if (language?.isConnected) language.disabled = false; }
+  });
+}
+function googleButton() {
+  return authConfig.googleEnabled ? `<button class="auth-google" type="button" id="auth-google">${esc(authT('google'))}</button><div class="auth-divider"><span>${esc(authT('or'))}</span></div>` : '';
+}
+function bindGoogle() {
+  const button = document.querySelector('#auth-google'); if (!button) return;
+  button.onclick = async () => {
+    button.disabled = true;
+    try {
+      const data = await authFetch('/sign-in/social', { provider: 'google', callbackURL: afterAuthURL(), newUserCallbackURL: afterAuthURL(), errorCallbackURL: authLink('/connexion') });
+      if (!data.url) throw Error(authT('googleFailed'));
+      location.assign(data.url);
+    } catch (error) { document.querySelector('#auth-feedback').innerHTML = authFeedback(error.message); button.disabled = false; }
+  };
+}
+async function authEntry(signup, view) {
+  const params = new URLSearchParams(location.search), token = inviteToken(); let invitation = null;
+  if (token) {
+    const response = await fetch('/api/public/invitations/' + encodeURIComponent(token));
+    if (view !== authView) return;
+    if (!response.ok) { go('/invitation?token=' + encodeURIComponent(token)); return; }
+    invitation = await response.json();
+  }
+  if (view !== authView) return;
+  authLayout({ title: authT(signup ? 'signup' : 'login'), subtitle: invitation && signup ? authT('signupInvited', { company: invitation.organizationName }) : authT(signup ? 'signupIntro' : 'loginIntro'), body: `${invitation ? `<p class="auth-invitation-hint">${esc(authT('invitationTo', { company: invitation.organizationName }))}</p>` : ''}<div id="auth-provider">${googleButton()}</div><form id="auth-main-form" class="auth-form">${signup ? `<label class="auth-field"><span>${esc(authT('fullName'))}</span><input name="name" required minlength="2" maxlength="150" autocomplete="name" placeholder="${esc(authT('namePlaceholder'))}"></label>` : ''}<label class="auth-field"><span>${esc(authT(signup ? 'professionalEmail' : 'email'))}</span><input name="email" type="email" required maxlength="254" autocomplete="email" value="${esc(invitation?.email || '')}" placeholder="${esc(authT('emailPlaceholder'))}" autocapitalize="none" spellcheck="false"></label>${passwordInput(authT('password'))}${signup ? `${passwordInput(authT('confirmPassword'), 'confirmPassword', true)}<p class="auth-password-hint">${esc(authT('passwordHint'))}</p>` : `<input type="hidden" name="rememberMe" value="on"><div class="auth-login-options">${authAnchor('/mot-de-passe-oublie', 'forgot')}</div>`}<button class="button auth-submit" type="submit">${esc(authT(signup ? 'createAccount' : 'signIn'))}</button><div id="auth-feedback" aria-live="polite">${params.get('erreur') ? authFeedback(CiblixI18n.language === 'fr' ? params.get('erreur') : authT('genericError')) : params.has('error') ? authFeedback(authT('genericError')) : ''}</div></form><p class="auth-switch-copy">${esc(authT(signup ? 'hasAccount' : 'noAccount'))} ${authAnchor(signup ? '/connexion' : '/inscription', signup ? 'signIn' : 'signup')}</p>` });
+  bindGoogle();
+  bindAuthForm('auth-main-form', async data => {
+    const callbackURL = afterAuthURL(token);
+    if (signup) {
+      if (data.password !== data.confirmPassword) throw Error(authT('mismatch'));
+      await authFetch('/sign-up/email', { name: data.name.trim(), email: data.email.trim(), password: data.password, companyName: '', callbackURL });
+      go('/verification-email?email=' + encodeURIComponent(data.email.trim()) + (token ? '&invitation=' + encodeURIComponent(token) : ''));
+    } else {
+      try {
+        await authFetch('/sign-in/email', { email: data.email.trim(), password: data.password, rememberMe: data.rememberMe === 'on', callbackURL }); go(callbackURL);
+      } catch (error) {
+        if (error.code === 'EMAIL_NOT_VERIFIED') { go('/verification-email?email=' + encodeURIComponent(data.email.trim()) + (token ? '&invitation=' + encodeURIComponent(token) : '')); return; }
+        throw error;
+      }
+    }
+  });
+}
+function verificationScreen() {
+  const params = new URLSearchParams(location.search), address = params.get('email') || '', token = inviteToken();
+  authLayout({ title: authT('verifyTitle'), subtitle: authT('verifyIntro'), body: `<p class="auth-explanation">${esc(authT('verifyExplanation', { email: address || authT('yourEmail') }))}</p><form id="resend-verification" class="auth-form">${!address ? `<label class="auth-field"><span>${esc(authT('email'))}</span><input name="email" required type="email" autocomplete="email"></label>` : ''}<button class="button auth-submit" type="submit">${esc(authT('resend'))}</button><div id="auth-feedback" aria-live="polite"></div></form><p class="auth-switch-copy">${authAnchor('/connexion', 'backLogin', token)}</p><p class="auth-password-hint">${esc(authT('verificationHint'))}</p>` });
+  bindAuthForm('resend-verification', async data => {
+    await authFetch('/send-verification-email', { email: address || data.email, callbackURL: afterAuthURL(token) });
+    document.querySelector('#auth-feedback').innerHTML = authFeedback(authT('verificationSent'), true);
+  });
+}
+function forgotScreen() {
+  authLayout({ title: authT('forgotTitle'), subtitle: authT('forgotIntro'), body: `<form id="forgot-form" class="auth-form"><label class="auth-field"><span>${esc(authT('email'))}</span><input name="email" type="email" required maxlength="254" autocomplete="email" placeholder="${esc(authT('emailPlaceholder'))}" autocapitalize="none" spellcheck="false"></label><button class="button auth-submit" type="submit">${esc(authT('sendLink'))}</button><div id="auth-feedback" aria-live="polite"></div></form><p class="auth-switch-copy">${authAnchor('/connexion', 'backLogin')}</p>` });
+  bindAuthForm('forgot-form', async data => {
+    await authFetch('/request-password-reset', { email: data.email, redirectTo: '/reinitialiser-mot-de-passe' });
+    document.querySelector('#auth-feedback').innerHTML = authFeedback(authT('resetSent'), true);
+  });
+}
+function renderResetSuccess() {
+  authLayout({ title: authT('resetSuccessTitle'), subtitle: authT('resetSuccessIntro'), body: `<a class="button auth-submit" href="/connexion">${esc(authT('signIn'))}</a>` });
+}
+function resetScreen() {
+  const params = new URLSearchParams(location.search), token = params.get('token'), invalid = params.has('error') || !token;
+  if (!invalid && completedReset === token) { renderResetSuccess(); return; }
+  authLayout({ title: authT('resetTitle'), subtitle: authT('resetIntro'), body: invalid ? `${authFeedback(authT('invalidReset'))}<a class="button auth-submit" href="/mot-de-passe-oublie">${esc(authT('requestLink'))}</a>` : `<form id="reset-form" class="auth-form">${passwordInput(authT('newPassword'))}${passwordInput(authT('confirmPassword'), 'confirmPassword', true)}<p class="auth-password-hint">${esc(authT('resetHint'))}</p><button class="button auth-submit" type="submit">${esc(authT('savePassword'))}</button><div id="auth-feedback" aria-live="polite"></div></form>` });
+  if (!invalid) bindAuthForm('reset-form', async data => {
+    if (data.password !== data.confirmPassword) throw Error(authT('mismatch'));
+    await authFetch('/reset-password', { newPassword: data.password, token });
+    completedReset = token; renderResetSuccess();
+  });
+}
+async function onboardingScreen(view) {
+  if (new URLSearchParams(location.search).has('error')) {
+    authLayout({ title: authT('expiredTitle'), subtitle: authT('expiredIntro'), body: `${authFeedback(authT('verifyAgain'))}<a class="button auth-submit" href="/verification-email">${esc(authT('resend'))}</a>` }); return;
+  }
+  const account = await accountContext(); if (view !== authView) return;
+  if (!account) { go('/connexion'); return; }
+  if (account.organizations.length) { await load(); go('/app'); return; }
+  authLayout({ title: authT('welcome', { name: account.user.name.split(' ')[0] }), subtitle: authT('welcomeIntro'), body: `<form id="onboarding-form" class="auth-form"><label class="auth-field"><span>${esc(authT('company'))}</span><input name="companyName" required maxlength="150" autocomplete="organization" value="${esc(account.companyName)}" placeholder="${esc(authT('companyPlaceholder'))}"></label><p class="auth-password-hint">${esc(authT('workspaceHint'))}</p><button class="button auth-submit" type="submit">${esc(authT('createWorkspace'))}</button><div id="auth-feedback" aria-live="polite"></div></form><button class="auth-change-account" id="auth-change-account">${esc(authT('changeAccount'))}</button>` });
+  bindAuthForm('onboarding-form', async data => { await accountWrite('/onboarding', { companyName: data.companyName.trim() }, account); await load(); go('/app'); });
+  document.querySelector('#auth-change-account').onclick = safeAction(async () => { await authFetch('/sign-out', {}); session = null; go('/connexion'); });
+  // Existing prefilled-company registrations still get automatic onboarding.
+  if (account.companyName) {
+    try { await accountWrite('/onboarding', { companyName: account.companyName }, account); await load(); go('/app'); }
+    catch (error) { document.querySelector('#auth-feedback').innerHTML = authFeedback(error.message); }
+  }
+}
+async function invitationScreen(view) {
+  const token = new URLSearchParams(location.search).get('token'); let invitation;
+  try {
+    const response = await fetch('/api/public/invitations/' + encodeURIComponent(token || '')); invitation = await response.json();
+    if (!response.ok) throw Error(authT('invalidInvitation'));
+  } catch (error) {
+    if (view !== authView) return;
+    authLayout({ title: authT('invitationUnavailable'), subtitle: authT('invitationUnavailableIntro'), body: `${authFeedback(error.message)}<p class="auth-explanation">${esc(authT('askInvitation'))}</p><a class="button auth-submit" href="/connexion">${esc(authT('signIn'))}</a>` }); return;
+  }
+  const account = await accountContext(); if (view !== authView) return;
+  const wrong = account && account.user.email.toLowerCase() !== invitation.email.toLowerCase();
+  const date = new Intl.DateTimeFormat(CiblixI18n.language === 'en' ? 'en-GB' : 'fr-FR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(invitation.expiresAt));
+  authLayout({ title: authT('invitationTitle'), subtitle: authT('invitationIntro', { company: invitation.organizationName }), body: `<div class="auth-invite-summary"><div><strong>${esc(invitation.organizationName)}</strong><span>${esc(authT('invitationFor', { email: invitation.email }))}</span></div></div><p class="auth-explanation">${esc(authT('invitationExplanation'))}</p>${wrong ? authFeedback(authT('wrongAccount', { email: account.user.email })) : account ? `<form id="accept-invitation-form" class="auth-form"><button class="button auth-submit" type="submit">${esc(authT('acceptInvitation'))}</button><div id="auth-feedback" aria-live="polite"></div></form>` : `<a class="button auth-submit" href="${authLink('/inscription', token)}">${esc(authT('signupJoin'))}</a><p class="auth-switch-copy">${esc(authT('hasAccount'))} ${authAnchor('/connexion', 'signIn', token)}</p>`}${account ? `<button class="auth-change-account" id="auth-change-account">${esc(authT('changeAccount'))}</button>` : ''}<p class="auth-password-hint">${esc(authT('invitationUntil', { date }))}</p>` });
+  if (account && !wrong) bindAuthForm('accept-invitation-form', async () => { await accountWrite('/invitations/accept', { token }, account); await load(); go('/app'); });
+  document.querySelector('#auth-change-account')?.addEventListener('click', safeAction(async () => { await authFetch('/sign-out', {}); session = null; go('/invitation?token=' + encodeURIComponent(token)); }));
+}
+async function renderAuthPage() {
+  const view = ++authView, path = location.pathname;
+  app.innerHTML = `<main class="board-empty" aria-live="polite"><p>${esc(authT('loading'))}</p></main>`;
+  try {
+    // The primary form never waits for optional provider configuration.
+    authConfig = { googleEnabled: false, mailPreviewURL: null };
+    const configRequest = fetch('/api/public/auth-config').then(response => response.ok ? response.json() : {}).catch(() => ({}));
+    if (path === '/connexion' || path === '/inscription') await authEntry(path === '/inscription', view);
+    else if (path === '/verification-email') verificationScreen();
+    else if (path === '/mot-de-passe-oublie') forgotScreen();
+    else if (path === '/reinitialiser-mot-de-passe') resetScreen();
+    else if (path === '/bienvenue') await onboardingScreen(view);
+    else if (path === '/invitation') await invitationScreen(view);
+    const config = await configRequest;
+    if (view !== authView || path !== location.pathname) return;
+    authConfig = config;
+    const providers = document.querySelector('#auth-provider');
+    if (providers) { providers.innerHTML = googleButton(); bindGoogle(); }
+    renderMailDeliveryNotice();
+  } catch (error) {
+    if (view === authView && path === location.pathname) authLayout({ title: authT('unavailableTitle'), subtitle: authT('unavailableIntro'), body: `${authFeedback(error.message)}<a class="button auth-submit" href="/connexion">${esc(authT('backLogin'))}</a>` });
+  }
+}

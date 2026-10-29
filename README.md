@@ -26,10 +26,10 @@ Ne supprimez pas le volume PostgreSQL : les données sont conservées au recharg
 
 La homepage propose **Créer un compte** et **Se connecter**.
 
-- `/inscription` : nom, entreprise, e-mail et mot de passe, ou Google.
+- `/inscription` : nom, e-mail professionnel, mot de passe et confirmation. Google est masqué tant que le fournisseur n’est pas configuré.
 - `/verification-email` : vérification obligatoire pour les comptes e-mail/mot de passe, renvoi possible.
-- `/bienvenue` : création de l’espace après vérification ; le créateur devient administrateur. Le nom saisi à l’inscription permet une création automatique et idempotente ; après Google, le nom de l’entreprise peut être demandé ici.
-- `/connexion` : e-mail/mot de passe ou Google, déconnexion et sessions révocables.
+- `/bienvenue` : nom de l’entreprise et création de l’espace après vérification ; le créateur devient administrateur. Les comptes ayant déjà un nom d’entreprise prérempli conservent la création automatique et idempotente.
+- `/connexion` : formulaire centré e-mail/mot de passe, déconnexion et sessions révocables. Google n’apparaît que si le fournisseur est configuré. Français et anglais disponibles via le sélecteur de langue des pages d’authentification.
 - `/mot-de-passe-oublie`, `/reinitialiser-mot-de-passe` : lien de réinitialisation à durée limitée, usage unique, révocation des sessions après changement.
 - `/invitation?token=...` : invitation nominative à une organisation existante, inscription/connexion puis acceptation explicite. Les invitations expirées, révoquées, déjà acceptées ou destinées à une autre adresse sont refusées.
 
@@ -51,7 +51,7 @@ En production, remplacer l’origine par celle d’`APP_URL`, en HTTPS. Seuls le
 
 ## Modules métiers
 
-- `/app` : dashboard de suivi, graphiques alimentés par les données enregistrées, relances et état Gmail non connecté.
+- `/app` : dashboard de suivi, statistiques calculées en base, relances du jour, en retard et à venir.
 - `/app/contacts` : tableau Entreprises/Contacts, recherche, filtres, tri, pagination, archivage/restauration, création/modification/suppression selon les droits. `?vue=entreprises` ouvre l’onglet Entreprises.
 - `/app/entreprises/:id` : coordonnées des interlocuteurs, notes, historique chronologique paginé, prochaines relances.
 - Contacts : panneau latéral avec coordonnées, notes, historique, relances et carte de visite privée.
@@ -59,7 +59,7 @@ En production, remplacer l’origine par celle d’`APP_URL`, en HTTPS. Seuls le
 
 Adresses e-mail normalisées et uniques par organisation ; plusieurs adresses possibles par contact ; contact sans entreprise possible. Export CSV protégé contre les cellules interprétées comme des formules. Photos de carte de visite PNG/JPEG/WebP privées, 8 Mo maximum, saisie manuelle sans OCR payant.
 
-Aucun devis, facture, revenu, pipeline complexe ou e-mailing de masse. Le dernier échange reste « Non disponible — Gmail non connecté » ; aucune réponse n’est inventée.
+Aucun devis, facture, revenu, pipeline complexe ou e-mailing de masse. Les espaces Gmail non fonctionnels sont masqués dans les vues métier ; les brouillons restent des textes enregistrés dans Ciblix, sans envoi.
 
 ## Architecture et sécurité
 
@@ -92,7 +92,11 @@ Les captures et rapports locaux sont dans `test-results/` (ignoré par Git). `VI
 
 Configurer et valider le SMTP de production et Google, puis préparer HTTPS, secrets, sauvegardes/restauration, supervision et revue de sécurité. L’application n’est pas déployée publiquement. Aucun fournisseur payant n’est souscrit sans accord.
 
-La vue métier charge au maximum 5 000 fiches de chaque type et les 50 dernières activités du dashboard. Le tableau pagine localement cet ensemble ; l’historique des fiches possède son endpoint paginé propre. Une pagination serveur de toute l’interface sera nécessaire au-delà de cette taille. Le partage est persistant, sans rafraîchissement temps réel annoncé.
+Les répertoires, les relances, les notes et les contacts d’une entreprise utilisent la pagination serveur. Le dashboard reçoit des agrégats et dix relances maximum par période ; les fiches chargent leur contexte à la demande. Les sélecteurs proposent une recherche serveur et les exports CSV parcourent toutes les pages côté serveur. L’ancien `/state` reste disponible comme aperçu borné de compatibilité (50 éléments par collection et totaux), sans être utilisé par l’interface.
+
+Les données sont actualisées au retour dans l’application, via le bouton Actualiser et après les mutations. Une saisie en cours diffère le rafraîchissement de l’interface. Le partage ne promet pas de synchronisation temps réel. La désactivation d’un membre responsable exige un transfert vers un autre membre actif de l’organisation : contacts, entreprises et relances ouvertes sont réattribués, avec historique conservé ; les relances terminées et annulées conservent leur responsable historique.
+
+La migration 006 ajoute seulement des index. Exécuter `npm run db:migrate` avant le redémarrage local ou un déploiement autorisé. Le détail de la recette et les limites du Lot 1 figurent dans [docs/lot1-stabilisation.md](docs/lot1-stabilisation.md).
 
 Gmail, calcul des réponses, synchronisation et brouillons Gmail restent hors périmètre, de même qu’Android. Les anciennes maquettes `pages.js`, `compliance.js`, `dashboard.js` ne sont plus chargées. Les clients actifs sont `app.js` (composants publics), `auth-ui.js` et `live.js`.
 
@@ -103,3 +107,5 @@ La vitrine comporte 11 sections (sans tarifs), un header sticky avec menus déro
 Le contenu est pré-rendu dans `public/index.html` : exécuter `npm run build` après toute modification de `public/homepage.js`. La feuille `public/homepage.css` complète le système commun uniquement pour la mise en page publique. Aucun backend ni écran métier n’est modifié par cette refonte. `npm run test:homepage` contrôle liens, CTA, menus, FAQ, responsive et contrastes.
 
 Les documents juridiques et coordonnées de contact sont à fournir ; les liens correspondants sont marqués « À publier ». Détails : [docs/homepage.md](docs/homepage.md).
+
+La refonte ciblée des pages d’authentification est documentée dans [docs/refonte-auth.md](docs/refonte-auth.md). Les dictionnaires FR/EN et la préférence de langue sont centralisés dans `public/i18n.js` ; les autres modules restent en français.
