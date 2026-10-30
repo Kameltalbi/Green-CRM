@@ -17,11 +17,6 @@ function buildHomepageMarkup({ drawIcon = typeof icon === 'function' ? icon : nu
   const reasons = [['check', 'why1Title', 'why1Text'], ['search', 'why2Title', 'why2Text'], ['building', 'why3Title', 'why3Text']];
   const questions = [['faq1q', 'faq1a'], ['faq2q', 'faq2a'], ['faq3q', 'faq3a']];
   const languageSelect = id => `<label class="home-language"><span class="sr-only">${text('language')}</span><select id="${id}" aria-label="${text('language')}"><option value="fr" ${language === 'fr' ? 'selected' : ''}>FR</option><option value="en" ${language === 'en' ? 'selected' : ''}>EN</option></select></label>`;
-  const footerColumns = [
-    ['homeFooterProduct', [['#fonctionnalites', 'homeNavFeatures'], ['#contacts', 'block1Title'], ['#relances', 'block2Title'], ['#collaboration', 'block3Title']]],
-    ['homeFooterResources', [['#comment', 'homeNavHow'], ['#questions', 'faqTitle']]],
-    ['homeFooterAccount', [['/inscription', 'signup'], ['/connexion', 'login']]]
-  ];
   return `<div class="marketing-page public-page" data-home-version="7" data-lang="${homeEscape(language)}"><a class="home-skip" href="#contenu">${text('homeSkip')}</a><header class="marketing-header"><div class="home-header-inner">${logo}<button class="home-menu-toggle" id="home-menu-toggle" type="button" aria-expanded="false" aria-controls="home-menu" aria-label="${text('homeOpenMenu')}">${menuIcon}</button><div class="home-menu" id="home-menu"><nav class="home-nav" aria-label="${text('homeMainNav')}"><a href="#fonctionnalites">${text('homeNavFeatures')}</a><a href="#comment">${text('homeNavHow')}</a></nav><div class="public-auth-actions"><a class="text-link" href="/connexion">${text('login')}</a>${languageSelect('home-language')}<a class="button small" href="/inscription">${text('signup')}</a></div></div></div></header><main id="contenu">
   <section class="home-hero hero" aria-labelledby="home-title"><div class="home-container home-hero-grid"><div class="home-hero-copy"><h1 id="home-title">${text('homeLine1')}<br>${text('homeLine2')}<br>${text('homeLine3')}</h1><p>${text('homeSubtitle')}</p><div class="home-actions"><a class="button" href="/inscription">${text('createAccount')}</a><a class="text-link" href="#fonctionnalites">${text('homeDiscover')}</a></div></div><figure class="home-hero-image"><img src="/assets/presentation-tableau-de-bord.jpg" alt="${text('homeHeroAlt')}" width="1024" height="682" fetchpriority="high" loading="eager" decoding="async"></figure></div></section>
   <section class="home-band" aria-labelledby="benefits-title"><div class="home-container"><h2 id="benefits-title">${text('benefitsTitle')}</h2><ul class="home-benefit-row">${benefits.map(([name, title, description]) => `<li>${drawIcon(name)}<div><h3>${text(title)}</h3><p>${text(description)}</p></div></li>`).join('')}</ul></div></section>
@@ -31,7 +26,19 @@ function buildHomepageMarkup({ drawIcon = typeof icon === 'function' ? icon : nu
   <section class="home-band home-band-soft" aria-labelledby="why-title"><div class="home-container"><h2 id="why-title">${text('whyTitle')}</h2><ul class="home-why">${reasons.map(([name, title, description]) => `<li>${drawIcon(name)}<div><h3>${text(title)}</h3><p>${text(description)}</p></div></li>`).join('')}</ul></div></section>
   <section class="home-band" id="questions" aria-labelledby="faq-title"><div class="home-container home-faq-layout"><h2 id="faq-title">${text('faqTitle')}</h2><div class="home-faq">${questions.map(([question, answer]) => `<details class="home-faq-item"><summary>${text(question)}<span aria-hidden="true">+</span></summary><p>${text(answer)}</p></details>`).join('')}</div></div></section>
   <section class="home-cta" aria-labelledby="cta-title"><div class="home-container home-cta-inner"><div class="home-cta-copy"><h2 id="cta-title">${text('homeCta')}<br><span>${text('homeCtaNext')}</span></h2><p>${text('homeCtaBody')} <strong>${text('homeCtaEmphasis')}</strong>.</p></div><a class="button light" href="#fonctionnalites">${text('homeCtaButton')}</a></div></section>
-  </main><footer class="home-footer"><div class="home-container home-footer-main"><div class="home-footer-brand">${logo}<p>${text('homeFooterText')}</p></div><div class="home-footer-links">${footerColumns.map(([label, links]) => `<nav aria-label="${text(label)}"><h2>${text(label)}</h2>${links.map(([href, key]) => `<a href="${href}">${text(key)}</a>`).join('')}</nav>`).join('')}</div></div><div class="home-container home-footer-bottom"><span>© ${new Date().getFullYear()} Ciblix</span>${languageSelect('home-language-footer')}</div></footer></div>`;
+  </main>${publicFooterMarkup(translate, languageSelect('home-language-footer'))}</div>`;
+}
+
+function publicFooterMarkup(translate, languageControl = '') {
+  const text = key => homeEscape(translate(key));
+  const logo = `<a class="brand" href="/" aria-label="${text('home')}"><img class="brand-wordmark" src="/assets/logo-ciblix.png" alt=""></a>`;
+  const footerColumns = [
+    ['homeFooterProduct', [['/#fonctionnalites', 'homeNavFeatures'], ['/#contacts', 'block1Title'], ['/#relances', 'block2Title'], ['/#collaboration', 'block3Title']]],
+    ['homeFooterResources', [['/#comment', 'homeNavHow'], ['/#questions', 'faqTitle']]],
+    ['homeFooterAccount', [['/inscription', 'signup'], ['/connexion', 'login']]],
+    ['homeFooterLegal', [['/privacy', 'privacy'], ['/terms', 'terms']]]
+  ];
+  return `<footer class="home-footer"><div class="home-container home-footer-main"><div class="home-footer-brand">${logo}<p>${text('homeFooterText')}</p></div><div class="home-footer-links">${footerColumns.map(([label, links]) => `<nav aria-label="${text(label)}"><h2>${text(label)}</h2>${links.map(([href, key]) => `<a href="${href}">${text(key)}</a>`).join('')}</nav>`).join('')}</div></div><div class="home-container home-footer-bottom"><span>© ${new Date().getFullYear()} Ciblix</span>${languageControl}</div></footer>`;
 }
 
 function renderPublicHomepage() {

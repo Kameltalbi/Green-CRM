@@ -8,7 +8,7 @@ CRM SaaS collaboratif français, Express/JavaScript et PostgreSQL 16. Entreprise
 - **E-mails de test : http://localhost:8026.** Mailpit intercepte vérifications, invitations et réinitialisations. Rien n’est envoyé dans Gmail ni sur Internet avec cette configuration.
 - Google : implémenté par Better Auth, mais indisponible tant que le client OAuth n’est pas configuré.
 - PostgreSQL : conteneur `ciblix-phase2-postgres`, port privé local 55439, volume `ciblix_phase2_pgdata`. Aucun autre conteneur/base n’est utilisé.
-- Aucun abonnement ni service cloud payant créé. Gmail et Android ne sont pas intégrés.
+- Aucun abonnement ni service cloud payant créé. L’envoi Gmail utilise un client OAuth distinct ; la lecture de la boîte n’est pas implémentée. Un premier client Android natif est disponible dans [android/](android/README.md).
 
 ## Installer et lancer
 
@@ -45,7 +45,9 @@ Renseigner `GOOGLE_CLIENT_ID` et `GOOGLE_CLIENT_SECRET`. L’URI de redirection 
 
 `http://localhost:3000/api/auth/callback/google`
 
-En production, remplacer l’origine par celle d’`APP_URL`, en HTTPS. Seuls les scopes d’identité `openid email profile` sont utilisés : **aucune autorisation Gmail**. Le raccordement avec un véritable client Google reste à valider avec les identifiants du propriétaire.
+En production, remplacer l’origine par celle d’`APP_URL`, en HTTPS. Seuls les scopes d’identité `openid email profile` sont utilisés. Ce client ne sert pas à Gmail.
+
+L’envoi Gmail utilise d’autres variables : `GMAIL_GOOGLE_CLIENT_ID`, `GMAIL_GOOGLE_CLIENT_SECRET` et `GMAIL_GOOGLE_REDIRECT_URI`. En production, l’URI est `https://ciblix.com/api/v1/gmail/callback` et l’origine JavaScript autorisée est `https://ciblix.com`. Le flux demande `gmail.send` pour l’envoi, ainsi que `openid` et `email` uniquement pour reconnaître l’adresse choisie. Il ne lit pas la boîte. Chaque utilisateur connecte ses comptes depuis Paramètres → Comptes e-mail, puis écrit depuis une fiche. Les jetons restent chiffrés côté serveur.
 
 `BETTER_AUTH_SECRET` doit être aléatoire, stable et d’au moins 32 caractères. Ne pas le modifier à chaque lancement, le publier ou l’inclure dans une capture. La migration 005 conserve les utilisateurs/données CRM et révoque les anciennes sessions.
 
@@ -69,7 +71,7 @@ Cookies HttpOnly, SameSite et Secure en HTTPS ; cache de session désactivé pou
 
 Les routes privées sont protégées côté serveur. Chaque opération métier revalide l’adhésion active. Les clés étrangères composites et les politiques PostgreSQL RLS forcées empêchent les liens/accès entre organisations. Le contexte de transaction est effacé à sa fermeture avant réutilisation du pool. L’ancienne API JSON anonyme est supprimée. Le fichier `data/customers.json` n’est pas importé.
 
-L’API JSON `/api/v1` est réutilisable par un futur client Android ; le parcours OAuth natif et le stockage sécurisé Android ne sont pas développés. Voir [docs/api-phase2.md](docs/api-phase2.md).
+L’API JSON `/api/v1` est réutilisable par un futur client Android ; le client [Android](android/README.md) utilise les sessions Bearer signées et Android Keystore. Le parcours OAuth Google natif reste à développer. Voir [docs/api-phase2.md](docs/api-phase2.md).
 
 ## Design system et validation de lisibilité
 
@@ -98,7 +100,7 @@ Les données sont actualisées au retour dans l’application, via le bouton Act
 
 La migration 006 ajoute seulement des index. Exécuter `npm run db:migrate` avant le redémarrage local ou un déploiement autorisé. Le détail de la recette et les limites du Lot 1 figurent dans [docs/lot1-stabilisation.md](docs/lot1-stabilisation.md).
 
-Gmail, calcul des réponses, synchronisation et brouillons Gmail restent hors périmètre, de même qu’Android. Les anciennes maquettes `pages.js`, `compliance.js`, `dashboard.js` ne sont plus chargées. Les clients actifs sont `app.js` (composants publics), `auth-ui.js` et `live.js`.
+La lecture et la synchronisation de la boîte Gmail restent hors périmètre. L’envoi depuis un compte connecté est disponible. Les brouillons de relance restent locaux, sans envoi automatique. Le périmètre du premier client Android est décrit dans [android/README.md](android/README.md). Les anciennes maquettes `pages.js`, `compliance.js`, `dashboard.js` ne sont plus chargées. Les clients actifs sont `app.js` (composants publics), `auth-ui.js` et `live.js`.
 
 ## Homepage publique
 

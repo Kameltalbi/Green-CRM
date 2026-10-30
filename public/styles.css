@@ -730,7 +730,17 @@ h1, h2, h3, p, small, label, strong, a, button, td, .tag, .tracking-badge { over
 .settings-tabs { display: flex; border-bottom: 1px solid var(--line); margin-bottom: 24px; }
 .settings-tabs span { padding: 12px 16px; color: var(--blue); border-bottom: 2px solid var(--blue); font-weight: 600; }
 .settings-form-card { padding: 28px; }
+.settings-notice { margin: 0 0 20px; color: var(--text); }
+.closure-banner { margin: 0 0 20px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--white); }
+.closure-confirm { display: flex; align-items: flex-start; gap: 10px; }
+.closure-status { margin-bottom: 20px; }
+.gmail-accounts { margin-top: 8px; }
+.gmail-account { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 0; border-top: 1px solid var(--line); }
+.gmail-account p { margin-top: 8px; }
+.gmail-account-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+@media (max-width: 700px) { .gmail-account { align-items: flex-start; flex-direction: column; } }
 .settings-section-title { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 28px; }
+.settings-section-title > div { min-width: 0; }
 .settings-section-title > svg { margin-top: 4px; flex-shrink: 0; }
 .settings-section-title h3 { font-size: 1.25rem; margin-bottom: 6px; }
 .settings-identity { display: flex; align-items: center; gap: 16px; margin-bottom: 28px; }
@@ -773,6 +783,28 @@ h1, h2, h3, p, small, label, strong, a, button, td, .tag, .tracking-badge { over
 .settings-members-table th { color: var(--text-secondary); font-weight: 600; background: var(--bg); }
 .settings-members-table th, .settings-members-table td { padding: 16px; border-bottom: 1px solid var(--line); }
 .settings-member-name { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+.superadmin-list { display: grid; gap: 20px; }
+.superadmin-org { padding: 28px; }
+.superadmin-meta { display: flex; flex-wrap: wrap; gap: 16px 32px; margin: 8px 0 20px; }
+.superadmin-meta p { margin: 4px 0 0; }
+.superadmin-end { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin-bottom: 20px; }
+.superadmin-end label { margin: 0; }
+@media (max-width: 700px) {
+  .superadmin-end { align-items: stretch; flex-direction: column; }
+  .superadmin-end .button { width: 100%; }
+  .superadmin-org { padding: 20px; }
+  .superadmin-org .settings-table-scroll { overflow: visible; }
+  .superadmin-org .settings-members-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+  .superadmin-org .settings-members-table,
+  .superadmin-org .settings-members-table tbody,
+  .superadmin-org .settings-members-table tr,
+  .superadmin-org .settings-members-table td { display: block; width: auto; }
+  .superadmin-org .settings-members-table tr { padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .superadmin-org .settings-members-table td { border: 0; padding: 2px 0; overflow-wrap: anywhere; }
+  .superadmin-org .settings-members-table td:nth-child(2)::before { content: "Rôle : "; color: var(--text-secondary); }
+  .superadmin-org .settings-members-table td:nth-child(3)::before { content: "Inscription : "; color: var(--text-secondary); }
+  .superadmin-org .settings-members-table td:nth-child(4)::before { content: "Mot de passe : "; color: var(--text-secondary); }
+}
 @media (max-width: 1000px) { .settings-profile-columns { grid-template-columns: 1fr; } }
 
 /* Une seule signature : logo ouvert, icône en navigation réduite. */

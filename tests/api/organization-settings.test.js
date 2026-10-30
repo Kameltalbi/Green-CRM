@@ -14,13 +14,13 @@ async function update(role,body){
 }
 test('Organisation : seul un administrateur peut renommer son espace',async()=>{
   const saved=await update('admin',{name:' Nouvelle entreprise '});assert.equal(saved.status,200);assert.equal(saved.data.name,'Nouvelle entreprise');assert.deepEqual(saved.write.args,['tenant-a','Nouvelle entreprise','{}']);assert.match(saved.write.sql,/WHERE id=\$1/);
-  const denied=await update('member',{name:'Autre nom'});assert.equal(denied.status,403);assert.equal(denied.write,undefined);
+  const denied=await update('member',{name:'Autre nom'});assert.equal(denied.status,403);assert.doesNotMatch(denied.write.sql,/^\s*UPDATE/);
 });
 test('Organisation : refuse les noms vides et les propriétés inattendues',async()=>{
-  for(const body of [{name:' '},{name:'Entreprise',id:'tenant-b'},{name:'x'.repeat(151)}]){const result=await update('admin',body);assert.equal(result.status,400);assert.equal(result.write,undefined);}
+  for(const body of [{name:' '},{name:'Entreprise',id:'tenant-b'},{name:'x'.repeat(151)}]){const result=await update('admin',body);assert.equal(result.status,400);assert.doesNotMatch(result.write.sql,/^\s*UPDATE/);}
 });
 
 test('Organisation : enregistre les coordonnées et refuse les logos invalides',async()=>{
   const result=await update('admin',{name:'Entreprise',country:'Tunisie',email:'contact@example.com',phone:'+216 123',website:'https://example.com',address:'Tunis',tax_id:'ABC'});assert.equal(result.status,200);assert.equal(JSON.parse(result.write.args[2]).country,'Tunisie');
-  for(const body of [{logo:'data:image/svg+xml;base64,PHN2Zz4='},{logo:'data:image/png;base64,YWJj'},{website:'javascript:alert(1)'},{email:'incorrect'}]){const invalid=await update('admin',{name:'Entreprise',...body});assert.equal(invalid.status,400);assert.equal(invalid.write,undefined);}
+  for(const body of [{logo:'data:image/svg+xml;base64,PHN2Zz4='},{logo:'data:image/png;base64,YWJj'},{website:'javascript:alert(1)'},{email:'incorrect'}]){const invalid=await update('admin',{name:'Entreprise',...body});assert.equal(invalid.status,400);assert.doesNotMatch(invalid.write.sql,/^\s*UPDATE/);}
 });

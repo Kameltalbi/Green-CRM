@@ -8,3 +8,11 @@ coverage/
 test-results/
 
 .local-postgres.env
+
+# Android local SDK, build outputs and signing material
+android/.gradle/
+android/.gradle-home/
+android/local.properties
+android/**/build/
+*.jks
+*.keystore

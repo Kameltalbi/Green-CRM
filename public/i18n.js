@@ -66,7 +66,7 @@
       homeCtaBody: 'Ciblix simplifie la gestion de vos relations commerciales en réunissant contacts, échanges et relances dans un seul espace. Une solution intuitive et collaborative qui vous fait gagner du temps, améliore votre suivi et vous permet de vous concentrer sur l’essentiel :',
       homeCtaEmphasis: 'développer votre activité et fidéliser vos clients', homeCtaButton: 'Découvrir Ciblix',
       homeFooterText: 'Le CRM simple pour le suivi commercial de votre équipe.', homeFooterNav: 'Liens utiles',
-      homeFooterProduct: 'Produit', homeFooterResources: 'Ressources', homeFooterAccount: 'Compte',
+      homeFooterProduct: 'Produit', homeFooterResources: 'Ressources', homeFooterAccount: 'Compte', homeFooterLegal: 'Informations',
       INVALID_EMAIL_OR_PASSWORD: 'Adresse e-mail ou mot de passe incorrect.', EMAIL_NOT_VERIFIED: 'Vérifiez votre adresse e-mail avant de vous connecter.',
       USER_ALREADY_EXISTS: 'Un compte existe déjà avec cette adresse. Connectez-vous ou réinitialisez votre mot de passe.',
       USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL: 'Si cette adresse est déjà utilisée, connectez-vous ou réinitialisez votre mot de passe.',
@@ -139,7 +139,7 @@
       homeCtaBody: 'Ciblix simplifies managing your business relationships by bringing contacts, conversations and follow-ups into one place. An intuitive, collaborative solution that saves you time, improves your follow-up and lets you focus on what matters:',
       homeCtaEmphasis: 'growing your business and keeping your clients', homeCtaButton: 'Discover Ciblix',
       homeFooterText: 'The simple CRM for your team’s sales follow-up.', homeFooterNav: 'Useful links',
-      homeFooterProduct: 'Product', homeFooterResources: 'Resources', homeFooterAccount: 'Account',
+      homeFooterProduct: 'Product', homeFooterResources: 'Resources', homeFooterAccount: 'Account', homeFooterLegal: 'Information',
       INVALID_EMAIL_OR_PASSWORD: 'Incorrect email address or password.', EMAIL_NOT_VERIFIED: 'Verify your email address before signing in.',
       USER_ALREADY_EXISTS: 'An account already exists with this email address. Sign in or reset your password.',
       USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL: 'If this email address is already in use, sign in or reset your password.',
@@ -160,7 +160,10 @@
     has(key) { return Object.hasOwn(messages.fr, key); },
     setLanguage(value) { if (!Object.hasOwn(messages, value)) return; language = value; try { localStorage.setItem('ciblix.language', value); } catch {} },
     // Add only links to documents that have actually been published.
-    legalLinks: [],
+    legalLinks: [
+      { key: 'privacy', href: '/privacy' },
+      { key: 'terms', href: '/terms' }
+    ],
     messages
   };
 })();

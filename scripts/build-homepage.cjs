@@ -21,12 +21,16 @@ const html = `<!DOCTYPE html>
 <meta property="og:description" content="${translate('homeSubtitle')}">
 <link rel="icon" href="/assets/icon-ciblix.png" type="image/png">
 <link rel="apple-touch-icon" href="/assets/icon-ciblix.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Ciblix">
 <link rel="preload" href="/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/homepage.css">
 </head>
 <body><div id="app">${markup}</div><div id="toast" role="status"></div>
 <dialog id="detail" aria-labelledby="detail-title"><button class="dialog-close" aria-label="Fermer">×</button><div id="detail-content"></div></dialog>
-<script defer src="/app.js"></script><script defer src="/homepage.js"></script><script defer src="/i18n.js"></script><script defer src="/auth-ui.js"></script><script defer src="/live.js"></script>
+<script defer src="/app.js"></script><script defer src="/homepage.js"></script><script defer src="/i18n.js"></script><script defer src="/auth-ui.js"></script><script defer src="/legal.js"></script><script defer src="/live.js"></script><script defer src="/pwa.js"></script>
 </body></html>
 `;
 fs.writeFileSync(path.join(root, 'public/index.html'), html);
