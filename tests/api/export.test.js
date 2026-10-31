@@ -191,7 +191,7 @@ test('Membre, administrateur désactivé et autre organisation sont refusés ou 
 test('Export vide et limite de volume', async () => {
   const empty = archiveOf(await v('/organization/export', {auth: secretEmpty}));
   assert.equal(empty.manifest.organization_id, orgEmpty);
-  for (const name of ['companies.json', 'contacts.json', 'contact-emails.json', 'notes.json', 'followups.json', 'activities.json', 'gmail-accounts.json', 'gmail-messages.json', 'images.json']) assert.deepEqual(empty.json(name), []);
+  for (const name of ['companies.json', 'contacts.json', 'contact-emails.json', 'notes.json', 'followups.json', 'activities.json', 'gmail-accounts.json', 'gmail-messages.json', 'gmail-synced-messages.json', 'gmail-synced-message-contacts.json', 'images.json']) assert.deepEqual(empty.json(name), []);
   assert.equal(empty.json('members.json').length, 1);
   assert.equal(empty.files['files/logo.png'], undefined);
   await assert.rejects(() => db.tenant(orgEmpty, client => buildArchive(client, orgEmpty, 40)), error => error.status === 413);

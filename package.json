@@ -14,6 +14,7 @@
     "test:visual": "node tests/visual-audit.cjs",
     "audit:css": "node scripts/audit-css.cjs",
     "auth:local": "node scripts/configure-auth-local.js",
+    "document-ai:local": "node scripts/configure-document-ai-local.js",
     "build": "node scripts/build-homepage.cjs",
     "test:homepage": "node tests/homepage-browser.cjs"
   },

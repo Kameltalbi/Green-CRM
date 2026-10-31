@@ -6,10 +6,11 @@ const {Pool}=require('pg');
 const {spawnSync}=require('node:child_process');
 const {createDatabase}=require('../../lib/db');
 const {createApp}=require('../../server');
-const {createGmailProvider,SEND_SCOPE}=require('../../lib/gmail');
+const {createGmailProvider,SEND_SCOPE,READ_SCOPE}=require('../../lib/gmail');
 const {encrypt,decrypt}=require('../../lib/gmail-crypto');
 const {fixtureSession}=require('../session-fixture.cjs');
 
+const SCOPE_FULL='openid email '+SEND_SCOPE+' '+READ_SCOPE;
 const calls={send:0,refresh:0,revoke:[],exchange:[]};
 const gmailGoogle={
   authorizationUrl({state,codeChallenge}){calls.lastAuth={state,codeChallenge};return 'https://accounts.google.com/o/oauth2/v2/auth?state='+encodeURIComponent(state)+'&code_challenge='+encodeURIComponent(codeChallenge);},
@@ -17,7 +18,7 @@ const gmailGoogle={
     calls.exchange.push({code,codeVerifier});
     if(code==='deny-exchange')throw Object.assign(new Error('bad'),{reason:'invalid_grant',status:400,oauth:true});
     if(code==='no-identity')throw Object.assign(new Error('id'),{reason:'identity',status:403,oauth:true});
-    return {access_token:'access-'+code,refresh_token:code==='boom'?'refresh-boom':'refresh-'+code,expires_in:code==='short'||code==='dead'?0:3600,scope:'openid email '+SEND_SCOPE,email:code.startsWith('other')?'other@gmail.com':'owner@gmail.com',sub:code.startsWith('other')?'sub-other':'sub-'+code};
+    return {access_token:'access-'+code,refresh_token:code==='boom'?'refresh-boom':'refresh-'+code,expires_in:code==='short'||code==='dead'?0:3600,scope:SCOPE_FULL,email:code.startsWith('other')?'other@gmail.com':'owner@gmail.com',sub:code.startsWith('other')?'sub-other':'sub-'+code};
   },
   async refresh(refreshToken){calls.refresh++;if(refreshToken==='refresh-dead')throw Object.assign(new Error('dead'),{reason:'invalid_grant',status:400,oauth:true});return {access_token:'access-renewed',expires_in:3600};},
   async revoke(value){calls.revoke.push(value);if(value==='refresh-boom')throw Object.assign(new Error('revoke'),{reason:'revoke_failed',status:500,oauth:true});},
@@ -28,7 +29,7 @@ let admin,db,server,base,rootPool,testDb,orgA,orgB,userA,userB,memberA,secretA,s
 const key=()=>crypto.randomBytes(16).toString('hex');
 async function request(path,{method='GET',body,auth=secretA,cookie=false,headers={}}={}){const response=await fetch(base+path,{method,redirect:'manual',headers:{...(auth?cookie?{cookie:'ciblix.session_token='+auth}:{authorization:'Bearer '+auth}:{}),...(body!==undefined?{'content-type':'application/json'}:{}),...headers},body:body===undefined?undefined:JSON.stringify(body)});let data;try{data=await response.json();}catch{}return {status:response.status,data,headers:response.headers};}
 const v=(path,opts)=>request('/api/v1'+path,opts);
-async function connect(code,auth=secretA){const start=await v('/gmail/connect',{method:'POST',auth,body:{}});assert.equal(start.status,200,JSON.stringify(start.data));const state=new URL(start.data.url).searchParams.get('state');const callback=await v('/gmail/callback?code='+encodeURIComponent(code)+'&state='+encodeURIComponent(state),{auth,cookie:true});return {start,state,callback};}
+async function connect(code,auth=secretA){const start=await v('/gmail/connect',{method:'POST',auth,body:{share_consent:true}});assert.equal(start.status,200,JSON.stringify(start.data));const state=new URL(start.data.url).searchParams.get('state');const callback=await v('/gmail/callback?code='+encodeURIComponent(code)+'&state='+encodeURIComponent(state),{auth,cookie:true});return {start,state,callback};}
 
 test('URL OAuth Gmail : PKCE, hors ligne, choix du compte et URI exacte',()=>{
   const url=new URL(createGmailProvider({gmailClientId:'gmail-client',gmailClientSecret:'gmail-secret',gmailRedirectUri:'https://ciblix.com/api/v1/gmail/callback'}).authorizationUrl({state:'abc',codeChallenge:'challenge'}));
@@ -41,7 +42,7 @@ test('URL OAuth Gmail : PKCE, hors ligne, choix du compte et URI exacte',()=>{
   assert.match(url.searchParams.get('prompt'),/select_account/);
   assert.match(url.searchParams.get('prompt'),/consent/);
   assert.match(url.searchParams.get('scope'),/gmail\.send/);
-  assert.doesNotMatch(url.searchParams.get('scope'),/gmail\.readonly/);
+  assert.match(url.searchParams.get('scope'),/gmail\.readonly/);
 });
 
 test('Chiffrement des jetons indépendant du texte en clair',()=>{
@@ -75,7 +76,7 @@ before(async()=>{
   ({secret:secretA}=await fixtureSession(admin,userA,orgA,process.env.BETTER_AUTH_SECRET));
   ({secret:secretB}=await fixtureSession(admin,userB,orgB,process.env.BETTER_AUTH_SECRET));
   ({secret:secretMember}=await fixtureSession(admin,memberA,orgA,process.env.BETTER_AUTH_SECRET));
-  server=(await createApp(db,{appUrl:'http://localhost',authRateLimit:false,googleClientId:'better-auth-client',googleClientSecret:'better-auth-secret-value',gmailClientId:'gmail-client',gmailClientSecret:'gmail-secret-value',gmailRedirectUri:'https://ciblix.com/api/v1/gmail/callback',gmailGoogle,mailer:{configured:true,send:async()=>{}}})).listen(0,'127.0.0.1');
+  server=(await createApp(db,{appUrl:'http://localhost',authRateLimit:false,disableGmailSyncLoop:true,googleClientId:'better-auth-client',googleClientSecret:'better-auth-secret-value',gmailClientId:'gmail-client',gmailClientSecret:'gmail-secret-value',gmailRedirectUri:'https://ciblix.com/api/v1/gmail/callback',gmailGoogle,mailer:{configured:true,send:async()=>{}}})).listen(0,'127.0.0.1');
   await new Promise(r=>server.once('listening',r));
   base='http://127.0.0.1:'+server.address().port;
   companyA=(await v('/companies',{method:'POST',body:{name:'Atelier Gmail'}})).data.id;
@@ -94,7 +95,8 @@ test('Better Auth conserve son client Google et ignore le client Gmail',async()=
 });
 
 test('Connexion Gmail, jetons chiffrés et absence d’exposition',async()=>{
-  const started=await v('/gmail/connect',{method:'POST',body:{}});
+  assert.equal((await v('/gmail/connect',{method:'POST',body:{}})).status,400);
+  const started=await v('/gmail/connect',{method:'POST',body:{share_consent:true}});
   const state=new URL(started.data.url).searchParams.get('state');
   const stored=(await admin.query('SELECT verifier_enc FROM gmail_oauth_states WHERE state_hash=$1',[require('crypto').createHash('sha256').update(state).digest('hex')])).rows[0];
   const verifier=decrypt(process.env.BETTER_AUTH_SECRET,stored.verifier_enc);
@@ -122,7 +124,7 @@ test('Connexion Gmail, jetons chiffrés et absence d’exposition',async()=>{
 
 test('Refus, callback invalide, état expiré et réutilisation du state',async()=>{
   assert.equal((await v('/gmail/callback?code=x&state='+'a'.repeat(43),{auth:null})).status,401);
-  const pendingDenial=await v('/gmail/connect',{method:'POST',body:{}});
+  const pendingDenial=await v('/gmail/connect',{method:'POST',body:{share_consent:true}});
   const denialState=new URL(pendingDenial.data.url).searchParams.get('state');
   const beforeDenial=(await v('/gmail/accounts')).data.accounts.length;
   const refused=await v('/gmail/callback?error=access_denied&state='+encodeURIComponent(denialState),{cookie:true});
@@ -130,7 +132,7 @@ test('Refus, callback invalide, état expiré et réutilisation du state',async(
   assert.equal((await v('/gmail/accounts')).data.accounts.length,beforeDenial);
   const bad=await v('/gmail/callback?code=ok&state='+'b'.repeat(43),{cookie:true});
   assert.match(bad.headers.get('location'),/etat=invalide/);
-  const pending=await v('/gmail/connect',{method:'POST',body:{}});
+  const pending=await v('/gmail/connect',{method:'POST',body:{share_consent:true}});
   const state=new URL(pending.data.url).searchParams.get('state');
   await admin.query('UPDATE gmail_oauth_states SET expires_at=now()-interval \'1 minute\' WHERE state_hash=$1',[crypto.createHash('sha256').update(state).digest('hex')]);
   const exchanges=calls.exchange.length;
@@ -148,12 +150,14 @@ test('Refus, callback invalide, état expiré et réutilisation du state',async(
 });
 
 test('Un autre utilisateur de la même organisation ne peut pas terminer le flux',async()=>{
-  const start=await v('/gmail/connect',{method:'POST',body:{}});
+  const start=await v('/gmail/connect',{method:'POST',body:{share_consent:true}});
   const state=new URL(start.data.url).searchParams.get('state');
   const beforeCount=(await v('/gmail/accounts')).data.accounts.length;
   const stolen=await v('/gmail/callback?code=stolen&state='+encodeURIComponent(state),{auth:secretMember,cookie:true});
   assert.match(stolen.headers.get('location'),/etat=invalide/);
-  assert.equal((await v('/gmail/accounts',{auth:secretMember})).data.accounts.length,0);
+  const memberList=await v('/gmail/accounts',{auth:secretMember});
+  assert.equal(memberList.data.accounts.length,beforeCount);
+  assert.equal(memberList.data.mine.length,0);
   assert.equal((await v('/gmail/accounts')).data.accounts.length,beforeCount);
   assert.match((await v('/gmail/callback?code=stolen&state='+encodeURIComponent(state),{cookie:true})).headers.get('location'),/etat=invalide/);
 });
@@ -163,7 +167,9 @@ test('Isolation des comptes et de l’envoi entre organisations et utilisateurs'
   const account=owned.data.accounts[0];
   assert.ok(account);
   assert.equal((await v('/gmail/accounts',{auth:secretB})).data.accounts.length,0);
-  assert.equal((await v('/gmail/accounts',{auth:secretMember})).data.accounts.length,0);
+  const memberList=await v('/gmail/accounts',{auth:secretMember});
+  assert.equal(memberList.data.accounts.length,owned.data.accounts.length);
+  assert.equal(memberList.data.mine.length,0);
   const foreign=await v('/gmail/messages',{method:'POST',auth:secretB,body:{account_id:account.id,contact_id:contactA,to:'ines@example.com',subject:'Interdit',body:'Non',idempotency_key:key()}});
   assert.equal(foreign.status,404);
   const colleague=await v('/gmail/messages',{method:'POST',auth:secretMember,body:{account_id:account.id,contact_id:contactA,to:'ines@example.com',subject:'Interdit',body:'Non',idempotency_key:key()}});
@@ -257,7 +263,7 @@ test('Sans identifiants Gmail, la connexion est refusée et le CRM reste utilisa
   try{
     const health=await fetch(origin+'/api/health');
     assert.equal(health.status,200);
-    const connect=await fetch(origin+'/api/v1/gmail/connect',{method:'POST',headers:{authorization:'Bearer '+secretA,'content-type':'application/json'},body:'{}'});
+    const connect=await fetch(origin+'/api/v1/gmail/connect',{method:'POST',headers:{authorization:'Bearer '+secretA,'content-type':'application/json'},body:JSON.stringify({share_consent:true})});
     assert.equal(connect.status,503);
     const accounts=await fetch(origin+'/api/v1/gmail/accounts',{headers:{authorization:'Bearer '+secretA}});
     assert.equal((await accounts.json()).configured,false);

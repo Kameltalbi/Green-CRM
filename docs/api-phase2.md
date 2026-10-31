@@ -27,12 +27,15 @@ Base `/api/v1`, JSON UTF-8, UUID, dates ISO 8601 avec fuseau. Chaque requête ex
 | GET | `/companies`, `/contacts`, `/notes`, `/followups` | `{items,total,limit,offset,related}` ; limit 1–200, offset entier positif ou nul |
 | GET | `/companies/:id`, `/contacts/:id`, `/notes/:id`, `/followups/:id` | fiche de l’organisation, sinon 404 |
 | GET | `/companies/:id/history`, `/contacts/:id/history` | `{items,total,limit,offset,gmailConnected}` ; `gmailConnected` indique un compte Gmail actif de l’utilisateur ; limite 1–100, défaut 25 |
-| GET | `/gmail/accounts` | comptes Gmail de l’utilisateur courant, sans jeton ; `{configured,accounts}` |
-| POST | `/gmail/connect` | démarre OAuth ; `{url}` ; 503 si le client Gmail n’est pas configuré |
+| GET | `/gmail/accounts` | comptes Gmail de l’organisation (sans jeton) ; `{configured,consentNotice,accounts,mine}` |
+| POST | `/gmail/connect` | démarre OAuth ; corps `{share_consent:true}` obligatoire ; `{url}` ; 503 si non configuré |
 | GET | `/gmail/callback` | retour Google, redirection vers les paramètres |
 | POST | `/gmail/accounts/:id/default` | compte expéditeur par défaut de l’utilisateur |
-| DELETE | `/gmail/accounts/:id` | déconnexion et révocation |
-| POST | `/gmail/messages` | envoi Gmail ; historique seulement après confirmation |
+| POST | `/gmail/accounts/:id/sync` | synchronisation manuelle (propre compte, ou admin) ; `{full?:boolean}` |
+| DELETE | `/gmail/accounts/:id` | déconnexion, purge des messages synchronisés du compte, révocation |
+| GET | `/contacts/:id/emails`, `/companies/:id/emails` | historique synchronisé partagé ; `q`, `limit`, `offset`, `owner_user_id` |
+| GET | `/gmail/synced/:id` | détail d’un message synchronisé de l’organisation |
+| POST | `/gmail/messages` | envoi Gmail depuis le propre compte ; historique seulement après confirmation |
 | POST/PATCH | `/companies`, `/companies/:id` | nom, secteur, ville, description, responsable ; PATCH : archivage |
 | POST/PATCH | `/contacts`, `/contacts/:id` | nom, entreprise nullable, fonction, téléphone, origine, responsable, adresses ; PATCH : archivage |
 | DELETE | `/companies/:id`, `/contacts/:id` | administrateur uniquement |
@@ -48,7 +51,7 @@ Les identifiants d’organisation/auteur et les champs système sont refusés da
 
 Erreurs : `{message}` en français pour l’API métier ; les codes fournisseur sont traduits par l’interface. Codes usuels : 400 validation, 401 session, 403 droits/vérification/CSRF, 404 invisible/inexistant, 409 doublon ou contrainte, 410 invitation périmée, 413 capacité/taille, 429 limitation, 503 envoi indisponible.
 
-L’envoi Gmail est un flux OAuth distinct de Better Auth. La lecture de la boîte n’est pas disponible. Le client Android natif est décrit dans [android/README.md](../android/README.md). Les historiques mêlent les actions Ciblix et, après confirmation de Gmail, les e-mails envoyés.
+L’envoi et la synchronisation Gmail sont un flux OAuth distinct de Better Auth (`gmail.send` + `gmail.readonly`). Voir [gmail-readonly-oauth.md](./gmail-readonly-oauth.md). Les messages synchronisés liés aux contacts sont partagés dans l’organisation ; l’envoi reste personnel. Le client Android natif est décrit dans [android/README.md](../android/README.md).
 
 ## Pagination serveur et contexte — Lot 1
 

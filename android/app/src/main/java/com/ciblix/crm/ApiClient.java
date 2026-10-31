@@ -23,8 +23,11 @@ final class ApiClient {
         Failure(int status, String message) { super(message); this.status = status; }
     }
     JSONObject request(String method, String path, JSONObject body) throws Exception {
+        return request(method, path, body, 20000);
+    }
+    JSONObject request(String method, String path, JSONObject body, int readTimeoutMs) throws Exception {
         HttpURLConnection c = (HttpURLConnection) URI.create(base + path).toURL().openConnection();
-        c.setConnectTimeout(15000); c.setReadTimeout(20000); c.setInstanceFollowRedirects(false);
+        c.setConnectTimeout(15000); c.setReadTimeout(Math.max(20000, readTimeoutMs)); c.setInstanceFollowRedirects(false);
         c.setRequestMethod(method); c.setRequestProperty("Accept", "application/json");
         if (!token.isEmpty()) c.setRequestProperty("Authorization", "Bearer " + token);
         try {

@@ -8,6 +8,7 @@ Premier client Android natif Java, sans WebView ni dépendance UI externe, utili
 - Session Bearer signée Better Auth, conservée chiffrée AES-GCM avec clé Android Keystore ; aucun mot de passe enregistré. Sauvegarde Android désactivée.
 - Tableau de bord et relances en retard, du jour et à venir.
 - Contacts et entreprises : recherche serveur, pagination par 25, consultation, création et modification des champs principaux.
+- Scanner un document (photo ou PDF, jusqu’à 5 pages) : analyse via le backend Ciblix (Gemini), vérification puis création/complétion de fiches. Seul le nom est obligatoire. Aucune clé Gemini dans l’APK.
 - Ajout de notes partagées depuis une fiche.
 - Création de relances générales ou rattachées à une fiche, modification et clôture.
 - Changement d’organisation et déconnexion avec révocation serveur.
@@ -34,9 +35,11 @@ Seule la variante debug autorise HTTP sur les trois hôtes de développement exp
 
 Utiliser les vrais comptes du serveur. L’adresse doit être vérifiée par e-mail ; aucun accès fictif n’est ajouté. La création de compte et le mot de passe oublié passent par la page de connexion web ouverte dans le navigateur. Google natif et les liens profonds ne sont pas implémentés.
 
-## Périmètre de cette première version
+## Périmètre
 
 Données chargées à l’ouverture d’un écran ou via Actualiser, sans mode hors ligne. Les brouillons de formulaires ne sont pas conservés après rotation/fermeture. Les fiches modifient nom/fonction/téléphone/origine ou nom/secteur/ville/description. L’édition des adresses e-mail, de l’entreprise d’un contact, des responsables, les historiques et la lecture des notes, les cartes de visite, les invitations, l’archivage et la suppression restent dans le client web. Les relances acceptent actuellement une échéance ISO 8601 avec fuseau explicitement saisi. Aucun rappel système ni synchronisation Gmail.
+
+L’APK de production utilise par défaut `https://ciblix.com`. L’importation de documents exige que la fonctionnalité soit déployée et configurée sur ce serveur (`DOCUMENT_AI_API_KEY`). Sans déploiement serveur, l’analyse renverra une erreur de configuration.
 
 ## Vérification manuelle
 

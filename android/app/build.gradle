@@ -2,6 +2,26 @@ plugins { id 'com.android.application' }
 android {
     namespace 'com.ciblix.crm'
     compileSdk 35
-    defaultConfig { applicationId 'com.ciblix.crm'; minSdk 26; targetSdk 35; versionCode 4; versionName '0.1.3' }
-    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    defaultConfig {
+        applicationId 'com.ciblix.crm'
+        minSdk 26
+        targetSdk 35
+        versionCode 6
+        versionName '0.1.5'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+        debug {
+            // Conserve le serveur HTTPS de production par défaut ; le debug autorise aussi localhost via network_security_config.
+        }
+    }
+}
+dependencies {
+    implementation 'androidx.core:core:1.13.1'
 }

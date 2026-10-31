@@ -1,4 +1,4 @@
-const CACHE = 'ciblix-v2';
+const CACHE = 'ciblix-v5';
 const PRECACHE = [
   '/',
   '/connexion',

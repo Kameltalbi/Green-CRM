@@ -390,6 +390,10 @@ blockquote footer { margin-top: 12px; }
 .record-card-details summary { cursor: pointer; color: var(--blue); font-size: 1rem; }
 .record-card-details .card-photo-button { margin-top: 12px; }
 .business-card-preview img { display: block; max-height: 240px; width: auto; object-fit: contain; margin: auto; }
+.document-import-review { max-height: min(70vh, 640px); overflow: auto; }
+.document-import-item { margin: 16px 0; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.document-import-item + .document-import-item { margin-top: 12px; }
+.document-import-select { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 12px; }
 .history-note { white-space: pre-wrap; overflow-wrap: anywhere; }
 .message-preview { margin: 16px 0; }
 .message-preview p { margin: 12px 0; }
@@ -409,6 +413,13 @@ blockquote footer { margin-top: 12px; }
 .form-pair, .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .prototype-form > p { font-size: .875rem; }
 dialog { padding: 24px; border: 1px solid var(--line); border-radius: 14px; width: min(680px,calc(100% - 24px)); max-width: calc(100% - 24px); max-height: calc(100dvh - 24px); color: var(--text); background: var(--white); overflow-y: auto; box-shadow: 0 15px 60px #1f293730; }
+dialog.entity-dialog { width: min(920px, calc(100% - 24px)); }
+.entity-form-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+.entity-form-section { margin: 0; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); display: flex; flex-direction: column; gap: 12px; }
+.entity-form-section h3 { margin: 0; font-size: 1rem; color: var(--text); }
+.entity-form-collapsible > summary { cursor: pointer; color: var(--blue); font-size: 1rem; font-weight: 600; }
+.entity-form-collapsible[open] > summary { margin-bottom: 12px; }
+.entity-rich-form #entity-dup-hint { color: var(--text-secondary); background: var(--soft); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
 dialog::backdrop { background: #1f293780; }
 dialog #detail-content > h2 { margin: 12px 28px 14px 0; font-size: 1.75rem; }
 dialog p { margin: 10px 0; }
@@ -738,6 +749,15 @@ h1, h2, h3, p, small, label, strong, a, button, td, .tag, .tracking-badge { over
 .gmail-account { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 0; border-top: 1px solid var(--line); }
 .gmail-account p { margin-top: 8px; }
 .gmail-account-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.gmail-consent { display: grid; gap: 12px; margin: 12px 0; }
+.gmail-consent-label { display: flex; gap: 10px; align-items: flex-start; font-size: .9rem; line-height: 1.4; }
+.gmail-consent-label input { margin-top: 3px; }
+.record-emails-section { margin-top: 16px; }
+.record-emails-toolbar { margin: 8px 0 12px; }
+.record-emails-search { display: grid; gap: 6px; max-width: 280px; }
+.record-email-item { display: flex; gap: 12px; align-items: flex-start; width: 100%; text-align: left; padding: 12px 0; border-top: 1px solid var(--line); cursor: pointer; background: transparent; border-left: 0; border-right: 0; border-bottom: 0; font: inherit; color: inherit; }
+.record-email-item:hover { color: var(--accent); }
+.record-email-body { white-space: pre-wrap; font-family: inherit; font-size: .9rem; line-height: 1.45; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px; max-height: 50vh; overflow: auto; }
 @media (max-width: 700px) { .gmail-account { align-items: flex-start; flex-direction: column; } }
 .settings-section-title { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 28px; }
 .settings-section-title > div { min-width: 0; }

@@ -19,6 +19,7 @@ public final class MainActivity extends Activity {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private ApiClient api;
     private SessionStore sessions;
+    private DocumentImportController documentImport;
     private LinearLayout root, content, navigation;
     private WebView web;
     private TextView status;
@@ -31,8 +32,17 @@ public final class MainActivity extends Activity {
         sessions = new SessionStore(this);
         api = new ApiClient(getPreferences(0).getString("server", "https://ciblix.com"));
         api.token = sessions.read();
+        documentImport = new DocumentImportController(this, api, worker, () -> { if (!busy) show(); });
         if (state != null) { section = state.getString("section", "dashboard"); query = state.getString("query", ""); offset = state.getInt("offset"); }
         if (api.token.isEmpty()) openSite(state); else loadIdentity();
+    }
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (documentImport != null) documentImport.onPermissionResult(requestCode, grantResults);
+    }
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (documentImport != null) documentImport.onActivityResult(requestCode, resultCode, data);
     }
     @Override public void onBackPressed() {
         if (web != null && web.canGoBack()) { web.goBack(); return; }
@@ -178,6 +188,9 @@ public final class MainActivity extends Activity {
                 content.addView(button("Rechercher",()->{if(busy)return;query=search.getText().toString().trim();offset=0;show();}));
             }
             content.addView(button("+ "+(section.equals("followups")?"Planifier une relance":"Créer une fiche"),()->{if(!busy)edit(new JSONObject());}));
+            if(section.equals("contacts")||section.equals("companies")) {
+                content.addView(button("Scanner un document",()->{if(!busy&&documentImport!=null)documentImport.start(status);}));
+            }
             final String route=section;
             run(()->api.request("GET","/api/v1/"+route+"?limit=25&offset="+offset+"&q="+URLEncoder.encode(query,"UTF-8"),null),data->{
                 JSONArray items=data.getJSONArray("items"); int total=data.getInt("total");
@@ -209,7 +222,9 @@ public final class MainActivity extends Activity {
         String route=section;
         run(()->api.request("GET","/api/v1/"+route+"/"+item.getString("id"),null),record->{
             LinearLayout body=column();body.setPadding(dp(20),0,dp(20),0);
-            String[] keys=route.equals("contacts")?new String[]{"name","job_title","phone","source"}:new String[]{"name","sector","city","description"};
+            String[] keys=route.equals("contacts")
+                ? new String[]{"name","job_title","department","phone","phone_work","whatsapp","source","status"}
+                : new String[]{"name","sector","relation_type","city","country","phone","email","website","status","source","company_size","description","address","linkedin","socials"};
             for(String key:keys)if(!clean(record,key).trim().isEmpty())body.addView(text(clean(record,key),16));
             body.addView(button("Modifier",()->edit(record)));
             body.addView(button("Ajouter une note",()->note(route,record)));
@@ -228,8 +243,12 @@ public final class MainActivity extends Activity {
     private void edit(JSONObject record) { if(section.equals("followups"))editFollowup(record);else editRecord(record); }
     private void editRecord(JSONObject record) {
         String route=section; boolean contact=route.equals("contacts");
-        String[] keys=contact?new String[]{"name","job_title","phone","source"}:new String[]{"name","sector","city","description"};
-        String[] labels=contact?new String[]{"Nom *","Fonction","Téléphone","Origine"}:new String[]{"Nom *","Secteur","Ville","Description"};
+        String[] keys=contact
+            ? new String[]{"name","job_title","department","phone","phone_work","whatsapp","source","status"}
+            : new String[]{"name","sector","relation_type","description","phone","email","website","address","city","country","source","status","company_size","linkedin","socials"};
+        String[] labels=contact
+            ? new String[]{"Nom *","Fonction","Service","Mobile","Téléphone pro","WhatsApp","Source","Statut"}
+            : new String[]{"Nom *","Secteur","Relation (prospect/client/…)","Description","Téléphone","E-mail","Site web","Adresse","Ville","Pays","Source","Statut","Taille","LinkedIn","Autres réseaux"};
         form(record,route,keys,labels);
     }
     private void editFollowup(JSONObject record) {form(record,"followups",new String[]{"subject","due_at"},new String[]{"Objet *","Échéance avec fuseau (ex. 2026-11-01T09:00:00+01:00) *"});}

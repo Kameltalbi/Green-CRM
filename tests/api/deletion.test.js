@@ -234,4 +234,5 @@ test('Le script simule par défaut et poursuit après un échec', async () => {
   assert.equal(api.includes('/organization/delete'), false);
   assert.equal(CHILD_TABLES.includes('users'), false);
   assert.equal(CHILD_TABLES.includes('auth_accounts'), false);
+  assert.equal(CHILD_TABLES.includes('document_extractions'), true);
 });
