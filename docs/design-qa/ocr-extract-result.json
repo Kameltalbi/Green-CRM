@@ -1,0 +1,57 @@
+{
+  "companies": [
+    {
+      "name": "Vertéa Solutions",
+      "sector": "",
+      "city": "Lyon",
+      "description": "",
+      "address": "12 rue des Lilas, 69003 Lyon",
+      "phone": "+33 6 12 34 56 78",
+      "email": "camille.dupont@vertea-solutions.fr",
+      "website": "www.vertea-solutions.fr"
+    }
+  ],
+  "contacts": [
+    {
+      "name": "Camille Dupont",
+      "job_title": "Directrice commerciale",
+      "phone": "+33 6 12 34 56 78",
+      "emails": [
+        "camille.dupont@vertea-solutions.fr"
+      ],
+      "company_name": "Vertéa Solutions"
+    }
+  ],
+  "matches": {
+    "companies": [
+      {
+        "name": "Vertéa Solutions",
+        "items": []
+      }
+    ],
+    "contacts": [
+      {
+        "name": "Camille Dupont",
+        "emails": [
+          "camille.dupont@vertea-solutions.fr"
+        ],
+        "items": []
+      }
+    ]
+  },
+  "meta": {
+    "mimeType": "image/png",
+    "pageCount": 1,
+    "byteLength": 31436,
+    "model": "gemini-3.1-flash-lite",
+    "promptTokens": 1279,
+    "outputTokens": 223,
+    "estimatedCostUsd": 0.0009412
+  },
+  "quotas": {
+    "dailyUsed": 1,
+    "dailyLimit": 20,
+    "monthlySpentUsd": 0.0009412,
+    "monthlyBudgetUsd": 10
+  }
+}

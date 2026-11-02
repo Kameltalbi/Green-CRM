@@ -44,45 +44,76 @@ final class DocumentImportController {
     private final ApiClient api;
     private final ExecutorService worker;
     private final Runnable onSaved;
+    private final UiKit ui;
     private final List<JSONObject> pages = new ArrayList<>();
     private Uri cameraUri;
     private File cameraFile;
     private TextView statusView;
+    private boolean serviceReady = false;
+    private String serviceNotice = "";
 
     DocumentImportController(Activity activity, ApiClient api, ExecutorService worker, Runnable onSaved) {
         this.activity = activity;
         this.api = api;
         this.worker = worker;
         this.onSaved = onSaved;
+        this.ui = new UiKit(activity);
     }
 
     void start(TextView status) {
         this.statusView = status;
         pages.clear();
-        showCaptureSheet();
+        setStatus("Vérification du service OCR…");
+        worker.execute(() -> {
+            try {
+                JSONObject st = api.request("GET", "/api/v1/documents/import-status", null, 15000);
+                serviceReady = st.optBoolean("configured", false);
+                serviceNotice = st.optString("notice", "");
+                activity.runOnUiThread(() -> {
+                    if (activity.isDestroyed()) return;
+                    setStatus("");
+                    if (!serviceReady) {
+                        setStatus("OCR indisponible : service d’analyse non configuré sur le serveur.");
+                        new AlertDialog.Builder(activity)
+                            .setTitle("Scan indisponible")
+                            .setMessage("Le serveur n’a pas de prestataire d’analyse configuré. Aucun scan fictif n’est proposé.")
+                            .setPositiveButton("OK", null)
+                            .show();
+                        return;
+                    }
+                    showCaptureSheet();
+                });
+            } catch (Exception e) {
+                activity.runOnUiThread(() -> setStatus(e instanceof java.io.IOException
+                    ? "Serveur inaccessible. Vérifiez la connexion."
+                    : e.getMessage()));
+            }
+        });
     }
 
     private int dp(int value) {
-        return (int) (activity.getResources().getDisplayMetrics().density * value);
+        return ui.dp(value);
     }
 
     private LinearLayout column() {
-        LinearLayout l = new LinearLayout(activity);
-        l.setOrientation(LinearLayout.VERTICAL);
-        return l;
+        return ui.column();
     }
 
     private void showCaptureSheet() {
         LinearLayout body = column();
         body.setPadding(dp(20), dp(8), dp(20), dp(8));
         TextView info = new TextView(activity);
-        info.setText("Photographier → Vérifier → Enregistrer\nJPG, PNG, WebP ou PDF · 5 pages · 8 Mo. Le document est envoyé à Ciblix (Gemini) uniquement après votre accord.");
+        info.setText((serviceNotice.isEmpty()
+            ? "Photographier → Vérifier → Enregistrer."
+            : serviceNotice + "\n")
+            + "JPG, PNG, WebP ou PDF · 5 pages · 8 Mo.");
         info.setTextSize(15);
-        info.setTextColor(Color.rgb(31, 41, 55));
+        info.setTextColor(UiKit.PETROLEUM);
         body.addView(info);
         TextView count = new TextView(activity);
         count.setText(pages.isEmpty() ? "Aucune page sélectionnée." : pages.size() + " page(s) prête(s).");
         count.setTextSize(14);
+        count.setTextColor(UiKit.MUTED);
         count.setPadding(0, dp(12), 0, dp(8));
         body.addView(count);
         AlertDialog dialog = new AlertDialog.Builder(activity)
@@ -90,20 +121,20 @@ final class DocumentImportController {
             .setView(body)
             .setNegativeButton("Annuler", null)
             .create();
-        body.addView(button("Photographier", () -> {
+        body.addView(styledButton("Appareil photo", true, () -> {
             dialog.dismiss();
             openCamera();
         }));
-        body.addView(button("Choisir image ou PDF", () -> {
+        body.addView(styledButton("Galerie / PDF", false, () -> {
             dialog.dismiss();
             openPicker();
         }));
         if (!pages.isEmpty()) {
-            body.addView(button("Analyser (" + pages.size() + " page(s))", () -> {
+            body.addView(styledButton("Analyser (" + pages.size() + " page(s))", true, () -> {
                 dialog.dismiss();
                 confirmAndExtract();
             }));
-            body.addView(button("Recommencer", () -> {
+            body.addView(styledButton("Recommencer", false, () -> {
                 pages.clear();
                 dialog.dismiss();
                 showCaptureSheet();
@@ -112,12 +143,8 @@ final class DocumentImportController {
         dialog.show();
     }
 
-    private Button button(String label, Runnable action) {
-        Button b = new Button(activity);
-        b.setText(label);
-        b.setAllCaps(false);
-        b.setOnClickListener(v -> action.run());
-        return b;
+    private Button styledButton(String label, boolean primary, Runnable action) {
+        return primary ? ui.primary(label, action) : ui.secondary(label, action);
     }
 
     private void openCamera() {

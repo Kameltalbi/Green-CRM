@@ -106,7 +106,7 @@ before(async () => {
     authRateLimit: false,
     disableGmailSyncLoop: true,
     documentAiApiKey: 'test-key',
-    documentAiModel: 'gemini-2.5-flash',
+    documentAiModel: 'gemini-3.1-flash-lite',
     documentAiFetch: mockGemini({
       companies: [{
         name: 'Atelier Document',

@@ -13,7 +13,10 @@ test('Traductions auth FR/EN : mêmes clés et paramètres, préférence partag�
   assert.deepEqual(Object.keys(fr).sort(),Object.keys(en).sort());
   for(const key of Object.keys(fr))assert.deepEqual((fr[key].match(/\{\w+\}/g)||[]).sort(),(en[key].match(/\{\w+\}/g)||[]).sort(),key);
   assert.equal(i18n.t('login'),'Connexion');i18n.setLanguage('en');assert.equal(i18n.t('login'),'Sign in');assert.equal(values.get('ciblix.language'),'en');
-  assert.equal(i18n.t('welcome',{name:'Amira'}),'Welcome Amira');i18n.setLanguage('unsupported');assert.equal(i18n.language,'en');
+  // welcome is the onboarding headline (no {name}); greeting uses firstName elsewhere in the app shell.
+  assert.equal(i18n.t('welcome'),'Create your workspace');
+  assert.equal(i18n.t('welcomeIntro'),'You’ll be its administrator.');
+  i18n.setLanguage('unsupported');assert.equal(i18n.language,'en');
 });
 test('Préférence de langue robuste sans stockage navigateur et avec langue explicite',()=>{
   const {i18n}=load({blocked:true});i18n.setLanguage('en');assert.equal(i18n.t('login'),'Sign in');

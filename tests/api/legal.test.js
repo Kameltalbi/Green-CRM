@@ -10,7 +10,7 @@ test('Pages juridiques publiques, liées dans le pied de page, sans authentifica
   assert.match(html,/src="\/legal\.js"/);
   assert.ok(!/gmail/i.test(html));
   const legal=fs.readFileSync(path.join(root,'public/legal.js'),'utf8');
-  for(const phrase of ['Politique de confidentialité','Conditions générales d’utilisation','gmail.send','gmail.readonly','Limited Use','À compléter','openid','AES-256-GCM','DECARBOTECH SARL','1953399W','loi organique n° 2004-63','kameltalbi.tn@gmail.com','Importation de documents','gemini-2.5-flash'])assert.match(legal,new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
+  for(const phrase of ['Politique de confidentialité','Conditions générales d’utilisation','gmail.send','gmail.readonly','Limited Use','À compléter','openid','AES-256-GCM','DECARBOTECH SARL','1953399W','loi organique n° 2004-63','kameltalbi.tn@gmail.com','Importation de documents','gemini-3.1-flash-lite'])assert.match(legal,new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
   const live=fs.readFileSync(path.join(root,'public/live.js'),'utf8');
   assert.match(live,/Importer depuis un document/);
   assert.match(live,/\/documents\/extract/);

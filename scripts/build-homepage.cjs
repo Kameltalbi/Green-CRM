@@ -13,7 +13,7 @@ const html = `<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#013BE5">
+<meta name="theme-color" content="#173D41">
 <title>${translate('homeTitle')}</title>
 <meta name="description" content="${translate('homeSubtitle')}">
 <meta property="og:type" content="website"><meta property="og:locale" content="fr_TN">

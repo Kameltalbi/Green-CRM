@@ -29,6 +29,9 @@ final class ApiClient {
         HttpURLConnection c = (HttpURLConnection) URI.create(base + path).toURL().openConnection();
         c.setConnectTimeout(15000); c.setReadTimeout(Math.max(20000, readTimeoutMs)); c.setInstanceFollowRedirects(false);
         c.setRequestMethod(method); c.setRequestProperty("Accept", "application/json");
+        // Better Auth n’accepte que l’APP_URL de confiance ; 10.0.2.2 (émulateur) se mappe sur localhost.
+        String origin = base.replace("://10.0.2.2", "://localhost").replace("://127.0.0.1", "://localhost");
+        c.setRequestProperty("Origin", origin);
         if (!token.isEmpty()) c.setRequestProperty("Authorization", "Bearer " + token);
         try {
             if (body != null) {

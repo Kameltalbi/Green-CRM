@@ -12,7 +12,7 @@ const ENV_PATH = path.join(ROOT, '.env');
 
 const DEFAULTS = {
   DOCUMENT_AI_PROVIDER: 'gemini',
-  DOCUMENT_AI_MODEL: 'gemini-2.5-flash',
+  DOCUMENT_AI_MODEL: 'gemini-3.1-flash-lite',
   DOCUMENT_AI_MAX_BYTES: '8388608',
   DOCUMENT_AI_MAX_PAGES: '5',
   DOCUMENT_AI_ORG_DAILY_LIMIT: '20',
@@ -84,7 +84,7 @@ async function main() {
   try { fs.chmodSync(ENV_PATH, 0o600); } catch {}
 
   console.log('Configuration Document AI enregistrée dans .env (mode 600).');
-  console.log('Fournisseur : gemini · modèle : gemini-2.5-flash · budget : 10 USD/mois · quota : 20 docs/org/jour · 8 Mo · 5 pages PDF.');
+  console.log('Fournisseur : gemini · modèle : gemini-3.1-flash-lite · budget : 10 USD/mois · quota : 20 docs/org/jour · 8 Mo · 5 pages PDF.');
   console.log('La clé n’a pas été affichée, ni écrite dans l’historique shell, ni destinée à Git (.env est ignoré).');
   console.log('Redémarrez le serveur local pour prendre en compte la clé.');
 }

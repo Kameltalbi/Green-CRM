@@ -1,4 +1,11 @@
 plugins { id 'com.android.application' }
+
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace 'com.ciblix.crm'
     compileSdk 35
@@ -6,20 +13,36 @@ android {
         applicationId 'com.ciblix.crm'
         minSdk 26
         targetSdk 35
-        versionCode 6
-        versionName '0.1.5'
+        versionCode 11
+        versionName '0.1.11'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile rootProject.file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
+            // Release installable (keystore local de test) — distinct du debug ; pas la clé Play Store.
+            if (keystorePropertiesFile.exists()) signingConfig signingConfigs.release
         }
         debug {
-            // Conserve le serveur HTTPS de production par défaut ; le debug autorise aussi localhost via network_security_config.
+            // Debug : API http://10.0.2.2:3000 via MainActivity ; cleartext autorisé par network_security_config.
         }
+    }
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
     }
 }
 dependencies {
