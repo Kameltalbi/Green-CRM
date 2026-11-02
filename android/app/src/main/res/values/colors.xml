@@ -1,3 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#FFFFFF</color>
+    <color name="ciblix_petroleum">#173D41</color>
+    <color name="ciblix_sage">#408F86</color>
+    <color name="ciblix_soft">#68ADA5</color>
+    <color name="ciblix_bg">#F4F7F6</color>
+    <color name="ciblix_field">#EDF2F0</color>
+    <color name="ic_launcher_background">#000000</color>
 </resources>

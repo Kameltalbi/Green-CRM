@@ -26,7 +26,7 @@ public final class MainActivity extends Activity {
     private String section = "dashboard", query = "", organization = "Mon espace";
     private int offset = 0, generation = 0;
     private boolean busy = false;
-    private static final int BLUE = Color.rgb(1,59,229), INK = Color.rgb(31,41,55);
+    private static final int BLUE = Color.rgb(23,61,65), SAGE = Color.rgb(64,143,134), INK = Color.rgb(23,61,65);
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         sessions = new SessionStore(this);
@@ -71,7 +71,7 @@ public final class MainActivity extends Activity {
     }
     private void frame(String title) {
         generation++; busy = false;
-        root = column(); root.setPadding(dp(20),0,dp(20),0); root.setBackgroundColor(Color.rgb(245,247,252));
+        root = column(); root.setPadding(dp(20),0,dp(20),0); root.setBackgroundColor(Color.rgb(244,247,246));
         root.setOnApplyWindowInsetsListener((v,insets)->{ root.setPadding(dp(20),insets.getSystemWindowInsetTop(),dp(20),insets.getSystemWindowInsetBottom()); return insets; });
         TextView brand = text("ciblix",28); brand.setTextColor(BLUE); brand.setTypeface(null,Typeface.BOLD); root.addView(brand);
         TextView heading = text(title,24); heading.setTypeface(null,Typeface.BOLD); root.addView(heading);
@@ -118,7 +118,7 @@ public final class MainActivity extends Activity {
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(web, true);
-        web.setBackgroundColor(Color.rgb(245,247,252));
+        web.setBackgroundColor(Color.rgb(244,247,246));
         web.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 android.net.Uri uri = request.getUrl();
@@ -205,7 +205,7 @@ public final class MainActivity extends Activity {
     }
     private String clean(JSONObject o,String key){return o.isNull(key)?"":o.optString(key,"");}
     private LinearLayout card(String title,String detail) {
-        LinearLayout c=column();c.setPadding(dp(16),dp(8),dp(16),dp(12));GradientDrawable bg=new GradientDrawable();bg.setColor(Color.WHITE);bg.setCornerRadius(dp(14));bg.setStroke(dp(1),Color.rgb(213,220,235));c.setBackground(bg);
+        LinearLayout c=column();c.setPadding(dp(16),dp(8),dp(16),dp(12));GradientDrawable bg=new GradientDrawable();bg.setColor(Color.WHITE);bg.setCornerRadius(dp(14));c.setBackground(bg);
         LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.setMargins(0,dp(8),0,dp(8));content.addView(c,p);TextView name=text(title,20);name.setTypeface(null,Typeface.BOLD);c.addView(name);if(!detail.trim().isEmpty())c.addView(text(detail,16));return c;
     }
     private void followupCard(JSONObject item) {

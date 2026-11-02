@@ -11,7 +11,7 @@ test('PWA : manifeste, icônes et service worker sans cache des données privée
   const manifest=JSON.parse(fs.readFileSync(path.join(root,'public/manifest.webmanifest'),'utf8'));
   assert.equal(manifest.start_url,'/connexion');
   assert.equal(manifest.display,'standalone');
-  assert.equal(manifest.theme_color,'#013BE5');
+  assert.equal(manifest.theme_color,'#173D41');
   assert.ok(manifest.icons.some(icon=>icon.sizes==='192x192'&&icon.purpose==='any'));
   assert.ok(manifest.icons.some(icon=>icon.sizes==='512x512'&&icon.purpose==='maskable'));
   for (const [file,size] of [['pwa-192.png',192],['pwa-512.png',512],['pwa-maskable-192.png',192],['pwa-maskable-512.png',512]]) {
