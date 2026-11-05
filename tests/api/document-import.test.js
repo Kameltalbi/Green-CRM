@@ -394,8 +394,7 @@ test('Carte nouvelle entreprise, association, doublon e-mail et image illisible'
   assert.equal(created.data.created.contacts[0].phone_work, '+216 71 222 222');
   assert.equal(created.data.created.contacts[0].source, 'Carte de visite');
   const image = await admin.query('SELECT mime_type, octet_length(data) AS n FROM contact_card_images WHERE contact_id=$1', [created.data.created.contacts[0].id]);
-  assert.equal(image.rows[0].mime_type, 'image/jpeg');
-  assert.ok(image.rows[0].n > 0);
+  assert.equal(image.rowCount, 0);
 
   const beforeCompanies = await admin.query('SELECT count(*)::int AS n FROM companies WHERE organization_id=$1 AND name=$2', [orgA, companyName]);
   const linked = await v('/documents/import', {

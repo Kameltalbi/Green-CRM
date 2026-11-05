@@ -17,3 +17,4 @@ android/**/build/
 *.jks
 *.keystore
 android/keystore.properties
+android/apk-backup/

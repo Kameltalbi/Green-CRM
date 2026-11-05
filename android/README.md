@@ -39,7 +39,7 @@ Utiliser les vrais comptes du serveur. L’adresse doit être vérifiée par e-m
 
 Données chargées à l’ouverture d’un écran ou via Actualiser, sans mode hors ligne. Les brouillons de formulaires ne sont pas conservés après rotation/fermeture. Les fiches modifient nom/fonction/téléphone/origine ou nom/secteur/ville/description. L’édition des adresses e-mail, de l’entreprise d’un contact, des responsables, les historiques et la lecture des notes, les cartes de visite, les invitations, l’archivage et la suppression restent dans le client web. Les relances acceptent actuellement une échéance ISO 8601 avec fuseau explicitement saisi. Aucun rappel système ni synchronisation Gmail.
 
-L’APK de production utilise par défaut `https://ciblix.com`. L’importation de documents exige que la fonctionnalité soit déployée et configurée sur ce serveur (`OPENAI_API_KEY`). Sans déploiement serveur, l’analyse renverra une erreur de configuration. L’application n’appelle jamais OpenAI directement.
+L’APK de production utilise par défaut `https://ciblix.com`. L’importation de documents exige que la fonctionnalité soit déployée et configurée sur ce serveur (`OPENAI_API_KEY`). Sans déploiement serveur, l’analyse renverra une erreur de configuration. L’application n’appelle jamais OpenAI directement. La photo reste dans le cache privé le temps de l’analyse, puis elle est supprimée. Elle n’est pas copiée dans la galerie ni envoyée pour être enregistrée.
 
 ## Vérification manuelle
 

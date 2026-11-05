@@ -3,6 +3,7 @@ package com.ciblix.crm;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Application;
 import android.app.Dialog;
 import android.content.ClipData;
 import android.content.ContentResolver;
@@ -76,6 +77,8 @@ final class DocumentImportController {
     private String previewError = "";
     private int captureToken;
     private int consumedToken = -1;
+    private boolean keepPhotoOnDismiss;
+    private static boolean purgedThisProcess;
 
     DocumentImportController(Activity activity, ApiClient api, ExecutorService worker, Runnable onSaved) {
         this.activity = activity;
@@ -83,6 +86,20 @@ final class DocumentImportController {
         this.worker = worker;
         this.onSaved = onSaved;
         this.ui = new UiKit(activity);
+        purgeStaleCaptures();
+        activity.getApplication().registerActivityLifecycleCallbacks(new Application.ActivityLifecycleCallbacks() {
+            @Override public void onActivityDestroyed(Activity host) {
+                if (host != activity) return;
+                host.getApplication().unregisterActivityLifecycleCallbacks(this);
+                if (host.isFinishing()) discardPhoto();
+            }
+            @Override public void onActivityCreated(Activity a, Bundle b) {}
+            @Override public void onActivityStarted(Activity a) {}
+            @Override public void onActivityResumed(Activity a) {}
+            @Override public void onActivityPaused(Activity a) {}
+            @Override public void onActivityStopped(Activity a) {}
+            @Override public void onActivitySaveInstanceState(Activity a, Bundle b) {}
+        });
     }
 
     void attachStatus(TextView status) { this.statusView = status; }
@@ -123,9 +140,8 @@ final class DocumentImportController {
     void start(TextView status) {
         if (extracting) return;
         this.statusView = status;
-        pages.clear();
-        recyclePreview();
-        dismissScreen();
+        dismissKeepingPhoto();
+        discardPhoto();
         setStatus("Vérification du service OCR…");
         worker.execute(() -> {
             try {
@@ -157,7 +173,6 @@ final class DocumentImportController {
             : notice)
             + "\nJPG, PNG, WebP ou PDF · 5 pages · 8 Mo.");
         body.addView(info);
-        File pending = rememberedFile();
         AlertDialog dialog = new AlertDialog.Builder(activity)
             .setTitle("Scanner une carte")
             .setView(body)
@@ -171,18 +186,6 @@ final class DocumentImportController {
             dialog.dismiss();
             openPicker();
         }));
-        if (usableFile(pending)) {
-            body.addView(ui.secondary("Reprendre la dernière photo", () -> {
-                dialog.dismiss();
-                try {
-                    pages.clear();
-                    addImageFile(pending);
-                    showPreview();
-                } catch (Exception e) {
-                    report("Photo inutilisable", messageOf(e));
-                }
-            }));
-        }
         dialog.show();
     }
 
@@ -200,6 +203,7 @@ final class DocumentImportController {
             remember(cameraFile);
             cameraUri = FileProvider.getUriForFile(activity, activity.getPackageName() + ".fileprovider", cameraFile);
             Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+            // Fichier du cache privé uniquement : aucune insertion MediaStore ni copie dans la galerie.
             intent.putExtra(MediaStore.EXTRA_OUTPUT, cameraUri);
             intent.setClipData(ClipData.newRawUri("scan", cameraUri));
             intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
@@ -253,13 +257,20 @@ final class DocumentImportController {
                     addUri(data.getData());
                 } else if (wrote) {
                     addImageFile(file);
+                    deleteCurrentCameraFile();
                 } else if (data != null && data.getExtras() != null && data.getExtras().get("data") instanceof Bitmap thumb) {
                     addBitmap(thumb, "image/jpeg");
                     setStatus("Photo reçue en basse résolution.");
                 } else if (resultCode != Activity.RESULT_OK) {
-                    report("Prise de vue annulée", "Aucune photo n’a été enregistrée. Reprenez la photo ou choisissez une image dans la galerie.");
+                    deleteCurrentCameraFile();
+                    if (pages.isEmpty()) {
+                        report("Prise de vue annulée", "Aucune photo n’a été conservée. Reprenez la photo ou choisissez une image dans la galerie.");
+                    } else {
+                        showPreview();
+                    }
                     return;
                 } else {
+                    deleteCurrentCameraFile();
                     report("Photo non enregistrée", "L’appareil photo s’est ouvert mais le fichier image est vide. Réessayez, ou choisissez la photo dans la galerie. Aucune fiche n’a été créée.");
                     return;
                 }
@@ -287,6 +298,7 @@ final class DocumentImportController {
             }
             showWhenReady(this::showPreview);
         } catch (Exception e) {
+            deleteCurrentCameraFile();
             report("Photo inutilisable", messageOf(e));
         }
     }
@@ -338,24 +350,26 @@ final class DocumentImportController {
         footer.addView(ui.secondary("Reprendre la photo", () -> {
             pages.clear();
             recyclePreview();
-            dismissScreen();
+            dismissKeepingPhoto();
+            deleteCurrentCameraFile();
             openCamera();
         }));
         footer.addView(ui.secondary("Choisir dans la galerie", () -> {
             pages.clear();
             recyclePreview();
-            dismissScreen();
+            dismissKeepingPhoto();
+            deleteCurrentCameraFile();
             openPicker();
         }));
         if (pages.size() < 5 && (pages.isEmpty() || !"application/pdf".equals(pages.get(0).optString("mime_type")))) {
             footer.addView(ui.secondary("Ajouter une page", () -> {
-                dismissScreen();
+                dismissKeepingPhoto();
                 openCamera();
             }));
         }
         footer.addView(ui.ghost("Annuler", () -> {
             dismissScreen();
-            setStatus("Analyse annulée. Aucune fiche n’a été créée.");
+            setStatus("Analyse annulée. La photo a été supprimée. Aucune fiche n’a été créée.");
         }));
         openScreen("Vérifier la photo", body, footer);
         setStatus("Photo prête. Lancez l’analyse ou reprenez-la.");
@@ -373,7 +387,7 @@ final class DocumentImportController {
         setStatus("Analyse en cours…");
         AlertDialog progress = new AlertDialog.Builder(activity)
             .setTitle("Analyse OpenAI")
-            .setMessage("Lecture de la carte par OpenAI. La photo est conservée. Aucune fiche n’est créée pendant cette étape.")
+            .setMessage("Lecture de la carte par OpenAI. La photo n’est pas enregistrée. Elle reste disponible seulement si l’analyse échoue.")
             .setCancelable(false)
             .create();
         try {
@@ -384,8 +398,8 @@ final class DocumentImportController {
             showPreview();
             return;
         }
-        dismissScreen();
         List<JSONObject> snapshot = new ArrayList<>(pages);
+        dismissKeepingPhoto();
         worker.execute(() -> {
             try {
                 JSONObject body = new JSONObject().put("external_processing_consent", true);
@@ -400,9 +414,10 @@ final class DocumentImportController {
                 JSONObject result = api.request("POST", "/api/v1/documents/extract", body, 90000);
                 activity.runOnUiThread(() -> {
                     extracting = false;
+                    discardPhoto();
                     if (activity.isDestroyed()) return;
                     try { progress.dismiss(); } catch (Exception ignored) {}
-                    setStatus("");
+                    setStatus("Analyse terminée. La photo a été supprimée.");
                     try { showReview(result); }
                     catch (Exception e) { report("Résultat illisible", messageOf(e)); }
                 });
@@ -471,8 +486,12 @@ final class DocumentImportController {
         Button save = ui.vivid("Enregistrer", UiKit.SAGE, null);
         footer.addView(save);
         footer.addView(ui.secondary("Reprendre la photo", () -> {
+            dismissKeepingPhoto();
+            openCamera();
+        }));
+        footer.addView(ui.ghost("Abandonner", () -> {
             dismissScreen();
-            showPreview();
+            setStatus("Saisie abandonnée. Aucune fiche n’a été créée.");
         }));
         Dialog dialog = openScreen("Vérifier avant d’enregistrer", body, footer);
         save.setOnClickListener(v -> {
@@ -484,16 +503,11 @@ final class DocumentImportController {
                 worker.execute(() -> {
                     try {
                         JSONObject saved = api.request("POST", "/api/v1/documents/import", payload, 30000);
-                        String cardError = uploadCard(saved);
                         activity.runOnUiThread(() -> {
                             if (activity.isDestroyed()) return;
                             try { dialog.dismiss(); } catch (Exception ignored) {}
-                            clearCapture();
-                            String message = summary(saved);
-                            if (cardError != null) {
-                                message += "\n\nLa fiche est enregistrée. La photo n’a pas été jointe : " + cardError;
-                            }
-                            report("Enregistrement réussi", message);
+                            discardPhoto();
+                            report("Enregistrement réussi", summary(saved));
                             onSaved.run();
                         });
                     } catch (Exception e) {
@@ -510,43 +524,6 @@ final class DocumentImportController {
                 error.setText(messageOf(e));
             }
         });
-    }
-
-    private String uploadCard(JSONObject saved) {
-        String data = firstImageData();
-        String id = firstContactId(saved);
-        if (data == null || id == null) return null;
-        try {
-            api.request("POST", "/api/v1/contacts/" + id + "/card",
-                new JSONObject().put("mime_type", "image/jpeg").put("data", data), 30000);
-            return null;
-        } catch (Exception e) {
-            return messageOf(e);
-        }
-    }
-
-    private String firstImageData() {
-        for (JSONObject page : pages) {
-            if ("image/jpeg".equals(page.optString("mime_type"))) return page.optString("data", null);
-        }
-        return null;
-    }
-
-    private String firstContactId(JSONObject result) {
-        if (result == null) return null;
-        for (String bucket : new String[]{"created", "updated"}) {
-            JSONObject group = result.optJSONObject(bucket);
-            if (group == null) continue;
-            JSONArray contacts = group.optJSONArray("contacts");
-            if (contacts == null) continue;
-            for (int i = 0; i < contacts.length(); i++) {
-                JSONObject row = contacts.optJSONObject(i);
-                if (row == null) continue;
-                String id = row.optString("id", "");
-                if (!id.isEmpty()) return id;
-            }
-        }
-        return null;
     }
 
     private String summary(JSONObject result) {
@@ -978,7 +955,10 @@ final class DocumentImportController {
         dialog.setContentView(root);
         dialog.setCancelable(true);
         screen = dialog;
-        dialog.setOnDismissListener(d -> { if (screen == dialog) screen = null; });
+        dialog.setOnDismissListener(d -> {
+            if (screen == dialog) screen = null;
+            if (!keepPhotoOnDismiss) discardPhoto();
+        });
         dialog.show();
         if (dialog.getWindow() != null) {
             dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
@@ -1070,13 +1050,43 @@ final class DocumentImportController {
         return file != null && file.isFile() && file.length() > 0;
     }
 
-    private void clearCapture() {
-        pages.clear();
-        recyclePreview();
+    private void dismissKeepingPhoto() {
+        keepPhotoOnDismiss = true;
+        dismissScreen();
+        keepPhotoOnDismiss = false;
+    }
+
+    private void purgeStaleCaptures() {
+        if (purgedThisProcess) return;
+        purgedThisProcess = true;
+        deleteCaptureFiles();
+    }
+
+    private void deleteCurrentCameraFile() {
         clearMarker();
         if (cameraFile != null && cameraFile.getName().startsWith("scan-")) cameraFile.delete();
         cameraFile = null;
         cameraUri = null;
+    }
+
+    private void deleteCaptureFiles() {
+        clearMarker();
+        File[] files = activity.getCacheDir().listFiles();
+        if (files != null) {
+            for (File file : files) {
+                String name = file.getName();
+                if (name.startsWith("scan-") || name.startsWith("import-") || "pending-scan.txt".equals(name)) file.delete();
+            }
+        }
+        cameraFile = null;
+        cameraUri = null;
+    }
+
+    private void discardPhoto() {
+        pages.clear();
+        recyclePreview();
+        previewError = "";
+        deleteCaptureFiles();
     }
 
     private void recyclePreview() {
