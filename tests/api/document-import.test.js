@@ -10,6 +10,8 @@ const {fixtureSession} = require('../session-fixture.cjs');
 const {
   normalizeExtraction,
   cleanContact,
+  extractDocument,
+  publicProviderError,
   estimateCostUsd,
   countPdfPages,
   parseDataUrlOrBase64
@@ -20,18 +22,22 @@ const png = Buffer.from(
   'base64'
 );
 
-let admin, db, server, base, rootPool, testDb, orgA, orgB, userA, userB, secretA, secretB, geminiCalls;
+let admin, db, server, base, rootPool, testDb, orgA, orgB, userA, userB, secretA, secretB, openaiCalls, openaiImpl;
 
-function mockGemini(payload) {
+function mockOpenAI(payload) {
   return async (url, options) => {
-    geminiCalls.push({url: String(url), body: JSON.parse(options.body)});
+    openaiCalls.push({
+      url: String(url),
+      body: JSON.parse(options.body),
+      authorization: String(options.headers?.authorization || '')
+    });
     return {
       ok: true,
       status: 200,
       async json() {
         return {
-          candidates: [{content: {parts: [{text: JSON.stringify(payload)}]}}],
-          usageMetadata: {promptTokenCount: 1000, candidatesTokenCount: 200}
+          output_text: JSON.stringify(payload),
+          usage: {input_tokens: 1000, output_tokens: 200, input_tokens_details: {cached_tokens: 0}}
         };
       }
     };
@@ -69,6 +75,26 @@ test('Normalisation : entreprise seule, contact personne, coût estimé', () => 
   assert.equal(out.contacts[1].name, 'Inès Ben Ali');
   assert.equal(cleanContact({name: 'Solo', emails: [], phone: ''}).name, 'Solo');
   assert.equal(cleanContact({name: '', emails: []}), null);
+  const rich = cleanContact({
+    name: 'Lina Ben Ali',
+    phone: '+216 98',
+    phone_work: '+216 71',
+    emails: ['lina@example.com'],
+    uncertain: ['phone', 'inventé']
+  });
+  assert.equal(rich.phone_work, '+216 71');
+  assert.deepEqual(rich.uncertain, ['phone']);
+  assert.match(publicProviderError({message: 'API key not valid. Please pass a valid API key.', providerStatus: 400}).message, /authentification/);
+  assert.doesNotMatch(publicProviderError({message: 'API key not valid AIzaSySECRETKEY1234567890'}).message, /AIza|API key/i);
+  assert.match(publicProviderError({code: 'quota', providerStatus: 429}).message, /quota/);
+  assert.match(publicProviderError({code: 'network'}).message, /injoignable/);
+  assert.match(publicProviderError({code: 'timeout'}).message, /photo est conservée/);
+  assert.equal(publicProviderError({status: 400, message: 'Image JPEG invalide.'}).status, 400);
+  assert.match(publicProviderError({providerStatus: 503, message: 'This model is currently experiencing high demand.'}).message, /photo est conservée/);
+  const namedOnly = normalizeExtraction({companies: [], contacts: [{name: 'Amina Ben Salah', company_name: 'CarboScan', emails: []}]});
+  assert.equal(namedOnly.companies.length, 1);
+  assert.equal(namedOnly.companies[0].name, 'CarboScan');
+  assert.equal(namedOnly.companies[0].email, '');
   assert.ok(estimateCostUsd(1_000_000, 0) > 0);
   assert.equal(countPdfPages(Buffer.from('%PDF-1.4 /Type /Page /Type /Page')), 2);
   assert.throws(() => parseDataUrlOrBase64('application/pdf', '%%%'), e => e.status === 400);
@@ -100,32 +126,33 @@ before(async () => {
   await admin.query("INSERT INTO memberships(organization_id,user_id,role) VALUES($1,$2,'admin'),($3,$4,'admin')", [orgA, userA, orgB, userB]);
   ({secret: secretA} = await fixtureSession(admin, userA, orgA, process.env.BETTER_AUTH_SECRET));
   ({secret: secretB} = await fixtureSession(admin, userB, orgB, process.env.BETTER_AUTH_SECRET));
-  geminiCalls = [];
+  openaiCalls = [];
+  openaiImpl = mockOpenAI({
+    companies: [{
+      name: 'Atelier Document',
+      sector: 'Conseil',
+      city: 'Tunis',
+      description: 'Bureau',
+      address: '1 rue Test',
+      phone: '+216 71 000 000',
+      email: 'contact@atelier.example',
+      website: 'https://atelier.example'
+    }],
+    contacts: [{
+      name: 'Sara Trabelsi',
+      job_title: 'Associée',
+      phone: '+216 98 000 000',
+      emails: ['sara@atelier.example'],
+      company_name: 'Atelier Document'
+    }]
+  });
   server = (await createApp(db, {
     appUrl: 'http://localhost',
     authRateLimit: false,
     disableGmailSyncLoop: true,
-    documentAiApiKey: 'test-key',
-    documentAiModel: 'gemini-3.1-flash-lite',
-    documentAiFetch: mockGemini({
-      companies: [{
-        name: 'Atelier Document',
-        sector: 'Conseil',
-        city: 'Tunis',
-        description: 'Bureau',
-        address: '1 rue Test',
-        phone: '+216 71 000 000',
-        email: 'contact@atelier.example',
-        website: 'https://atelier.example'
-      }],
-      contacts: [{
-        name: 'Sara Trabelsi',
-        job_title: 'Associée',
-        phone: '+216 98 000 000',
-        emails: ['sara@atelier.example'],
-        company_name: 'Atelier Document'
-      }]
-    }),
+    openaiApiKey: 'test-key',
+    openaiOcrModel: 'gpt-5.4-mini',
+    documentAiFetch: (url, options) => openaiImpl(url, options),
     mailer: {configured: true, send: async () => {}}
   })).listen(0, '127.0.0.1');
   await new Promise(r => server.once('listening', r));
@@ -146,6 +173,8 @@ test('Statut d’importation et refus sans consentement', async () => {
   const status = await v('/documents/import-status');
   assert.equal(status.status, 200, JSON.stringify(status.data));
   assert.equal(status.data.configured, true);
+  assert.match(status.data.notice, /OpenAI/);
+  assert.doesNotMatch(status.data.notice, /Gemini|Google/);
   assert.equal(status.data.maxPages, 5);
   assert.equal(status.data.quotas.dailyLimit, 20);
   assert.equal((await v('/documents/extract', {
@@ -154,8 +183,34 @@ test('Statut d’importation et refus sans consentement', async () => {
   })).status, 400);
 });
 
+test('saturation OpenAI : un second essai du même modèle, sans Gemini', async () => {
+  const calls = [];
+  const payload = {companies: [], contacts: [{name: 'Amina Ben Salah', job_title: 'Directrice', department: null, phone: null, phone_work: null, whatsapp: null, emails: ['amina@example.com'], company_name: 'CarboScan', uncertain: []}]};
+  const fetchImpl = async (url, options) => {
+    calls.push({url: String(url), model: JSON.parse(options.body).model});
+    if (calls.length === 1) return {ok: false, status: 503, async json() { return {error: {message: 'high demand', code: 'server_error'}}; }};
+    return {ok: true, status: 200, async json() { return {output_text: JSON.stringify(payload), usage: {input_tokens: 10, output_tokens: 10}}; }};
+  };
+  const result = await extractDocument({
+    config: {openaiApiKey: 'test-key-not-real', openaiOcrModel: 'gpt-5.4-mini'},
+    mimeType: 'image/png',
+    data: png.toString('base64'),
+    fetchImpl
+  });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].url, 'https://api.openai.com/v1/responses');
+  assert.equal(calls[1].url, calls[0].url);
+  assert.equal(calls[0].model, 'gpt-5.4-mini');
+  assert.equal(calls[1].model, 'gpt-5.4-mini');
+  assert.equal(result.meta.model, 'gpt-5.4-mini');
+  assert.equal(result.contacts[0].name, 'Amina Ben Salah');
+  assert.equal(result.companies[0].name, 'CarboScan');
+  assert.equal(result.companies[0].phone, '');
+  assert.doesNotMatch(JSON.stringify(calls), /generativelanguage|gemini/i);
+});
+
 test('Extraction mockée, quotas et création après confirmation seulement', async () => {
-  geminiCalls.length = 0;
+  openaiCalls.length = 0;
   const before = await admin.query("SELECT count(*)::int AS n FROM companies WHERE organization_id=$1", [orgA]);
   const extract = await v('/documents/extract', {
     method: 'POST',
@@ -166,8 +221,16 @@ test('Extraction mockée, quotas et création après confirmation seulement', as
     }
   });
   assert.equal(extract.status, 200, JSON.stringify(extract.data));
-  assert.equal(geminiCalls.length, 1);
-  assert.match(geminiCalls[0].url, /generativelanguage\.googleapis\.com/);
+  assert.equal(openaiCalls.length, 1);
+  assert.equal(openaiCalls[0].url, 'https://api.openai.com/v1/responses');
+  assert.equal(openaiCalls[0].body.model, 'gpt-5.4-mini');
+  assert.equal(openaiCalls[0].body.store, false);
+  assert.equal(openaiCalls[0].body.text.format.strict, true);
+  assert.equal(openaiCalls[0].body.text.format.type, 'json_schema');
+  assert.equal(openaiCalls[0].body.input[0].content.find(part => part.type === 'input_image').detail, 'high');
+  assert.match(openaiCalls[0].authorization, /^Bearer /);
+  assert.doesNotMatch(openaiCalls[0].url, /test-key|sk-/);
+  assert.equal(extract.data.meta.model, 'gpt-5.4-mini');
   assert.equal(extract.data.companies[0].name, 'Atelier Document');
   assert.equal(extract.data.contacts[0].name, 'Sara Trabelsi');
   const afterExtract = await admin.query("SELECT count(*)::int AS n FROM companies WHERE organization_id=$1", [orgA]);
@@ -307,4 +370,84 @@ test('document_extractions isolé par RLS', async () => {
   await db.tenant(orgB, async c => {
     assert.equal((await c.query('SELECT * FROM document_extractions')).rowCount, 0);
   });
+});
+
+test('Carte nouvelle entreprise, association, doublon e-mail et image illisible', async () => {
+  const stamp = crypto.randomBytes(4).toString('hex');
+  const companyName = 'Scan ' + stamp;
+  const email = 'scan-' + stamp + '@example.com';
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+  const created = await v('/documents/import', {
+    method: 'POST',
+    body: {
+      companies: [{selected: true, action: 'create', name: companyName, city: 'Tunis', address: '12 rue du Scan', phone: '+216 71 111 111', website: 'scan.example'}],
+      contacts: [{
+        selected: true, action: 'create', name: 'Nadia ' + stamp, job_title: 'Directrice',
+        phone: '+216 98 111 111', phone_work: '+216 71 222 222', emails: [email],
+        company_name: companyName, source: 'Carte de visite',
+        card_mime_type: 'image/jpeg', card_data: jpeg.toString('base64')
+      }]
+    }
+  });
+  assert.equal(created.status, 200, JSON.stringify(created.data));
+  assert.equal(created.data.created.contacts[0].company_id, created.data.created.companies[0].id);
+  assert.equal(created.data.created.contacts[0].phone_work, '+216 71 222 222');
+  assert.equal(created.data.created.contacts[0].source, 'Carte de visite');
+  const image = await admin.query('SELECT mime_type, octet_length(data) AS n FROM contact_card_images WHERE contact_id=$1', [created.data.created.contacts[0].id]);
+  assert.equal(image.rows[0].mime_type, 'image/jpeg');
+  assert.ok(image.rows[0].n > 0);
+
+  const beforeCompanies = await admin.query('SELECT count(*)::int AS n FROM companies WHERE organization_id=$1 AND name=$2', [orgA, companyName]);
+  const linked = await v('/documents/import', {
+    method: 'POST',
+    body: {
+      companies: [{selected: true, action: 'link', id: created.data.created.companies[0].id, name: companyName}],
+      contacts: [{selected: true, action: 'create', name: 'Karim ' + stamp, emails: ['karim-' + stamp + '@example.com'], company_name: companyName, phone_work: '+216 71 333 333'}]
+    }
+  });
+  assert.equal(linked.status, 200, JSON.stringify(linked.data));
+  assert.equal(linked.data.created.companies.length, 0);
+  assert.equal(linked.data.linked.companies.length, 1);
+  assert.equal(linked.data.created.contacts[0].company_id, created.data.created.companies[0].id);
+  const afterCompanies = await admin.query('SELECT count(*)::int AS n FROM companies WHERE organization_id=$1 AND name=$2', [orgA, companyName]);
+  assert.equal(afterCompanies.rows[0].n, beforeCompanies.rows[0].n);
+
+  const orphan = 'Orpheline ' + stamp;
+  const duplicate = await v('/documents/import', {
+    method: 'POST',
+    body: {
+      companies: [{selected: true, action: 'create', name: orphan}],
+      contacts: [{selected: true, action: 'create', name: 'Doublon ' + stamp, emails: [email], company_name: orphan}]
+    }
+  });
+  assert.equal(duplicate.status, 409);
+  assert.match(duplicate.data.message, /Aucune fiche/);
+  assert.equal((await admin.query('SELECT count(*)::int AS n FROM companies WHERE organization_id=$1 AND name=$2', [orgA, orphan])).rows[0].n, 0);
+
+  const companiesBefore = (await admin.query('SELECT count(*)::int AS n FROM companies WHERE organization_id=$1', [orgA])).rows[0].n;
+  const bad = await v('/documents/extract', {
+    method: 'POST',
+    body: {mime_type: 'image/jpeg', data: Buffer.from('pas-une-image').toString('base64'), external_processing_consent: true}
+  });
+  assert.equal(bad.status, 400);
+  assert.match(bad.data.message, /JPEG|Aucune fiche/);
+  assert.equal((await admin.query('SELECT count(*)::int AS n FROM companies WHERE organization_id=$1', [orgA])).rows[0].n, companiesBefore);
+
+  const previous = openaiImpl;
+  openaiImpl = async () => ({ok: false, status: 401, async json() { return {error: {message: 'Incorrect API key provided: sk-testsecretvalue. ', code: 'invalid_api_key', type: 'authentication_error'}}; }});
+  try {
+    const down = await v('/documents/extract', {
+      method: 'POST',
+      body: {mime_type: 'image/png', data: png.toString('base64'), external_processing_consent: true}
+    });
+    assert.equal(down.status, 503);
+    assert.match(down.data.message, /authentification/);
+    assert.match(down.data.message, /Aucune fiche/);
+    assert.doesNotMatch(JSON.stringify(down.data), /API key|sk-|AIza/i);
+    const logged = await admin.query("SELECT error_code FROM document_extractions WHERE organization_id=$1 AND error_code='auth'", [orgA]);
+    assert.equal(logged.rows.length, 1);
+    assert.equal((await admin.query('SELECT count(*)::int AS n FROM companies WHERE organization_id=$1', [orgA])).rows[0].n, companiesBefore);
+  } finally {
+    openaiImpl = previous;
+  }
 });

@@ -10,11 +10,12 @@ android {
     namespace 'com.ciblix.crm'
     compileSdk 35
     defaultConfig {
-        applicationId 'com.ciblix.crm'
+        // Nouvel applicationId : évite « app non installée » face aux anciennes signatures debug/release.
+        applicationId 'com.ciblix.app'
         minSdk 26
-        targetSdk 35
-        versionCode 11
-        versionName '0.1.11'
+        targetSdk 34
+        versionCode 21
+        versionName '0.1.21'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
@@ -27,6 +28,10 @@ android {
                 storePassword keystoreProperties['storePassword']
                 keyAlias keystoreProperties['keyAlias']
                 keyPassword keystoreProperties['keyPassword']
+                // Certains installateurs mobiles refusent V2 seul.
+                enableV1Signing true
+                enableV2Signing true
+                enableV3Signing true
             }
         }
     }
@@ -37,7 +42,8 @@ android {
             if (keystorePropertiesFile.exists()) signingConfig signingConfigs.release
         }
         debug {
-            // Debug : API http://10.0.2.2:3000 via MainActivity ; cleartext autorisé par network_security_config.
+            // Même clé que release pour pouvoir mettre à jour sans désinstaller (sinon « app non installée »).
+            if (keystorePropertiesFile.exists()) signingConfig signingConfigs.release
         }
     }
     lint {

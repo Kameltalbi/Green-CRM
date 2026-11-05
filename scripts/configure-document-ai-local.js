@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Configure DOCUMENT_AI_* dans .env (local uniquement).
+ * Configure OPENAI_API_KEY et les limites d’extraction dans .env (local uniquement).
  * La clé est saisie en terminal sans écho, hors historique shell et hors Git.
  * Ne modifie pas Gmail, Better Auth ni SMTP.
  */
@@ -11,8 +11,7 @@ const ROOT = path.join(__dirname, '..');
 const ENV_PATH = path.join(ROOT, '.env');
 
 const DEFAULTS = {
-  DOCUMENT_AI_PROVIDER: 'gemini',
-  DOCUMENT_AI_MODEL: 'gemini-3.1-flash-lite',
+  OPENAI_OCR_MODEL: 'gpt-5.4-mini',
   DOCUMENT_AI_MAX_BYTES: '8388608',
   DOCUMENT_AI_MAX_PAGES: '5',
   DOCUMENT_AI_ORG_DAILY_LIMIT: '20',
@@ -74,17 +73,17 @@ async function main() {
   let env = fs.readFileSync(ENV_PATH, 'utf8');
   for (const [key, value] of Object.entries(DEFAULTS)) env = upsertEnv(env, key, value);
 
-  const key = (await readSecret('Collez la clé DOCUMENT_AI_API_KEY (saisie masquée) : ')).trim();
-  if (!key) throw new Error('Clé vide. Aucune modification de DOCUMENT_AI_API_KEY.');
+  const key = (await readSecret('Collez la clé OPENAI_API_KEY (saisie masquée) : ')).trim();
+  if (!key) throw new Error('Clé vide. Aucune modification de OPENAI_API_KEY.');
   if (/\s/.test(key)) throw new Error('La clé ne doit pas contenir d’espaces.');
   if (key.length < 20) throw new Error('Clé trop courte. Vérifiez la valeur sans la coller dans le chat.');
 
-  env = upsertEnv(env, 'DOCUMENT_AI_API_KEY', key);
+  env = upsertEnv(env, 'OPENAI_API_KEY', key);
   fs.writeFileSync(ENV_PATH, env.endsWith('\n') ? env : env + '\n', {mode: 0o600});
   try { fs.chmodSync(ENV_PATH, 0o600); } catch {}
 
-  console.log('Configuration Document AI enregistrée dans .env (mode 600).');
-  console.log('Fournisseur : gemini · modèle : gemini-3.1-flash-lite · budget : 10 USD/mois · quota : 20 docs/org/jour · 8 Mo · 5 pages PDF.');
+  console.log('Configuration OpenAI enregistrée dans .env (mode 600).');
+  console.log('Modèle : gpt-5.4-mini · budget : 10 USD/mois · quota : 20 docs/org/jour · 8 Mo · 5 pages PDF.');
   console.log('La clé n’a pas été affichée, ni écrite dans l’historique shell, ni destinée à Git (.env est ignoré).');
   console.log('Redémarrez le serveur local pour prendre en compte la clé.');
 }
