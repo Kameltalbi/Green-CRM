@@ -799,12 +799,20 @@ h1, h2, h3, p, small, label, strong, a, button, td, .tag, .tracking-badge { over
 .gmail-consent { display: grid; gap: 12px; margin: 12px 0; }
 .gmail-consent-label { display: flex; gap: 10px; align-items: flex-start; font-size: .9rem; line-height: 1.4; }
 .gmail-consent-label input { margin-top: 3px; }
-.record-emails-section { margin-top: 16px; }
-.record-emails-toolbar { margin: 8px 0 12px; }
-.record-emails-search { display: grid; gap: 6px; max-width: 280px; }
-.record-email-item { display: flex; gap: 12px; align-items: flex-start; width: 100%; text-align: left; padding: 12px 0; border-top: 0; cursor: pointer; background: transparent; border-left: 0; border-right: 0; border-bottom: 0; font: inherit; color: inherit; }
-.record-email-item:hover { color: var(--accent); }
-.record-email-body { white-space: pre-wrap; font-family: inherit; font-size: .9rem; line-height: 1.45; background: var(--bg); border: 0; border-radius: 12px; padding: 12px; max-height: 50vh; overflow: auto; }
+.record-emails-section { margin-top: 24px; }
+.record-emails-toolbar { margin: 0 0 12px; }
+.record-emails-search { display: grid; gap: 6px; max-width: none; }
+.record-email-item { display: grid; gap: 4px; width: 100%; text-align: left; padding: 14px; margin: 0 0 10px; border: 0; border-radius: 12px; background: var(--bg); cursor: pointer; font: inherit; color: inherit; }
+.record-email-item:hover { background: var(--soft); }
+.record-email-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.record-email-top .tag { flex: none; white-space: nowrap; overflow-wrap: normal; }
+.record-email-item time { flex: none; font-size: .875rem; color: var(--text-secondary); white-space: nowrap; }
+.record-email-item strong { font-size: 1rem; font-weight: 550; }
+.record-email-item p { margin: 0; font-size: .875rem; color: var(--text-secondary); }
+.record-email-snippet { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.record-email-letter { display: grid; gap: 8px; }
+.record-email-letter p { margin: 0; }
+.record-email-body { white-space: pre-wrap; font-family: inherit; font-size: .875rem; line-height: 1.5; background: var(--bg); border: 0; border-radius: 12px; padding: 14px; max-height: 50vh; overflow: auto; margin: 0; }
 @media (max-width: 700px) { .gmail-account { align-items: flex-start; flex-direction: column; } }
 .settings-section-title { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 28px; }
 .settings-section-title > div { min-width: 0; }

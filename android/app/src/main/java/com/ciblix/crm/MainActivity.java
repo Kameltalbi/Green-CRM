@@ -31,7 +31,11 @@ public final class MainActivity extends Activity {
     private ProgressBar directoryProgress;
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private final Runnable directorySearchTask = () -> fetchDirectory(true);
-    private String section = "dashboard", query = "", followupScope = "", organization = "Mon espace", personName = "", chartWindow = "6m";
+    private String section = "dashboard", query = "", followupScope = "", organization = "Mon espace", personName = "", chartWindow = "6m", contactId = "", membershipRole = "member", closureStatus = "";
+    private int contactPane = 0;
+    private JSONObject contactSeed;
+    private JSONArray members;
+    private ContactRecordScreen contactScreen;
     private JSONObject dashboardPayload;
     private View portfolioHost;
     private ImageButton notifyButton;
@@ -60,6 +64,8 @@ public final class MainActivity extends Activity {
             section = state.getString("section", "dashboard");
             query = state.getString("query", "");
             offset = state.getInt("offset");
+            contactId = state.getString("contactId", "");
+            contactPane = state.getInt("contactPane");
             documentImport.restoreState(state);
         }
         if (layoutPreview) {
@@ -92,6 +98,11 @@ public final class MainActivity extends Activity {
     }
     @Override public void onBackPressed() {
         if (web != null && web.canGoBack()) { web.goBack(); return; }
+        if ("contact".equals(section)) {
+            if (contactScreen != null && contactScreen.handleBack()) return;
+            closeContact();
+            return;
+        }
         if ("settings".equals(section)) {
             section = "dashboard";
             show();
@@ -104,6 +115,8 @@ public final class MainActivity extends Activity {
         state.putString("section", section);
         state.putString("query", query);
         state.putInt("offset", offset);
+        state.putString("contactId", contactId);
+        state.putInt("contactPane", contactPane);
         if (documentImport != null) documentImport.saveState(state);
         if (web != null) web.saveState(state);
     }
@@ -193,7 +206,7 @@ public final class MainActivity extends Activity {
         bar.setElevation(dp(2));
         for (int i = 0; i < routes.length; i++) {
             final String route = routes[i];
-            boolean selected = "settings".equals(section) ? "more".equals(route) : !"more".equals(route) && section.equals(route);
+            boolean selected = "settings".equals(section) ? "more".equals(route) : !"more".equals(route) && (section.equals(route) || ("contact".equals(section) && "contacts".equals(route)));
             LinearLayout tab = ui.navTab(icons[i], labels[i], selected, accents[i], () -> {
                 if (busy) return;
                 if ("more".equals(route)) { openMore(); return; }
@@ -465,7 +478,11 @@ public final class MainActivity extends Activity {
     }
     private void loadWorkspace() {
         run(() -> api.request("GET", "/api/v1/me", null), me -> {
-            organization = me.getJSONObject("organization").getString("name");
+            JSONObject space = me.getJSONObject("organization");
+            organization = space.getString("name");
+            membershipRole = space.optString("role", "member");
+            closureStatus = space.optString("closure_status", "");
+            members = me.optJSONArray("members");
             personName = me.getJSONObject("user").optString("name", "");
             show();
             if (documentImport != null) documentImport.offerPendingCapture();
@@ -516,12 +533,14 @@ public final class MainActivity extends Activity {
 
     private void show() {
         uiHandler.removeCallbacks(directorySearchTask);
+        if (!"contact".equals(section)) contactScreen = null;
         boolean directory = section.equals("contacts") || section.equals("companies");
-        frame(directory || section.equals("dashboard") ? "" : title());
+        frame(directory || section.equals("dashboard") || section.equals("contact") ? "" : title());
         attachNav();
         if (section.equals("dashboard")) renderDashboard();
         else if (section.equals("followups")) renderFollowups();
         else if (section.equals("settings")) renderSettings();
+        else if (section.equals("contact")) renderContact();
         else renderDirectory();
     }
 
@@ -1368,8 +1387,79 @@ public final class MainActivity extends Activity {
         };
     }
 
+    private boolean canWrite() {
+        return !"reader".equals(membershipRole) && !"pending_deletion".equals(closureStatus);
+    }
+
+    private String memberName(String userId) {
+        if (userId == null || userId.isEmpty() || members == null) return "";
+        for (int i = 0; i < members.length(); i++) {
+            JSONObject member = members.optJSONObject(i);
+            if (member != null && userId.equals(member.optString("id"))) return member.optString("name");
+        }
+        return "";
+    }
+
+    private void openContact(String id, JSONObject seed) {
+        if (id == null || id.isEmpty()) return;
+        contactId = id;
+        contactSeed = seed;
+        section = "contact";
+        show();
+    }
+
+    private void closeContact() {
+        contactScreen = null;
+        section = "contacts";
+        show();
+    }
+
+    private void renderContact() {
+        if (contactId == null || contactId.isEmpty()) {
+            section = "contacts";
+            renderDirectory();
+            return;
+        }
+        LinearLayout back = ui.row();
+        TextView backLink = ui.label("Contacts", 15, UiKit.SAGE, true);
+        backLink.setPadding(0, ui.dp(12), 0, 0);
+        backLink.setOnClickListener(v -> closeContact());
+        backLink.setContentDescription("Revenir aux contacts");
+        back.addView(backLink);
+        chrome.addView(back);
+        final int ticket = generation;
+        contactScreen = new ContactRecordScreen(this, ui, api, worker, new ContactRecordScreen.Listener() {
+            @Override public boolean alive() { return !isDestroyed() && ticket == generation && "contact".equals(section); }
+            @Override public boolean canWrite() { return MainActivity.this.canWrite(); }
+            @Override public String memberName(String userId) { return MainActivity.this.memberName(userId); }
+            @Override public void onCompany(String companyId) { openCompany(companyId); }
+            @Override public void onPlanFollowup(String id) {
+                try { editFollowup(new JSONObject().put("contact_id", id)); }
+                catch (Exception error) { showStatus(error.getMessage(), UiKit.DANGER); }
+            }
+            @Override public void onEditFollowup(JSONObject followup) { editFollowup(followup); }
+            @Override public void onPane(int pane) { contactPane = pane; }
+            @Override public void onSessionExpired() {
+                sessions.clear();
+                api.token = "";
+                showLogin(null);
+            }
+            @Override public void onStatus(String message, int color) { showStatus(message, color); }
+        }, contactId, contactSeed, contactPane, layoutPreview);
+        contactScreen.attach(chrome, content);
+    }
+
+    private void openCompany(String companyId) {
+        if (busy || companyId == null || companyId.isEmpty() || layoutPreview) return;
+        run(() -> api.request("GET", "/api/v1/companies/" + companyId, null), company -> showRecord("companies", company));
+    }
+
     private void detail(JSONObject item) {
         if (busy) return;
+        if ("contacts".equals(section)) {
+            openContact(item.optString("id"), item);
+            return;
+        }
         String route = section;
         if (layoutPreview) {
             showRecord(route, item);
