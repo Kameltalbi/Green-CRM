@@ -3,8 +3,9 @@ package com.ciblix.crm;
 import android.app.*;
 import android.content.pm.ApplicationInfo;
 import android.graphics.Color;
-import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.content.*;
 import android.text.InputType;
 import android.view.*;
@@ -24,28 +25,52 @@ public final class MainActivity extends Activity {
     private SessionStore sessions;
     private DocumentImportController documentImport;
     private UiKit ui;
-    private LinearLayout root, content, navigation;
+    private LinearLayout root, content, navigation, chrome, directoryList;
     private WebView web;
-    private TextView status;
-    private String section = "dashboard", query = "", organization = "Mon espace";
-    private int offset = 0, generation = 0;
-    private boolean busy = false;
+    private TextView status, directoryCount;
+    private ProgressBar directoryProgress;
+    private final Handler uiHandler = new Handler(Looper.getMainLooper());
+    private final Runnable directorySearchTask = () -> fetchDirectory(true);
+    private String section = "dashboard", query = "", followupScope = "", organization = "Mon espace", personName = "", chartWindow = "6m";
+    private JSONObject dashboardPayload;
+    private View portfolioHost;
+    private ImageButton notifyButton;
+    private View notifyDot;
+    private int notifyLate;
+    private int offset = 0, generation = 0, directoryTicket = 0;
+    private boolean busy = false, directoryLoading = false, layoutPreview = false;
+    private long lastCreateTap = 0;
     private static final DateTimeFormatter DAY_TIME = DateTimeFormatter.ofPattern("d MMM · HH:mm", Locale.FRENCH);
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         ui = new UiKit(this);
         sessions = new SessionStore(this);
-        // Adresse API figée — jamais exposée dans l’UI.
-        // Release / téléphone physique → https://ciblix.com
-        // Debug sur émulateur uniquement → http://10.0.2.2:3000 (localhost du Mac).
-        api = new ApiClient(apiBase());
+        // Téléphone et APK installables : toujours la production (jamais 10.0.2.2).
+        api = new ApiClient("https://ciblix.com");
         api.token = sessions.read();
-        documentImport = new DocumentImportController(this, api, worker, () -> { if (!busy) show(); });
-        if (state != null) {
+        documentImport = new DocumentImportController(this, api, worker, () -> {
+            if (busy) return;
+            offset = 0;
+            query = "";
+            show();
+        });
+        layoutPreview = debugBuild() && getIntent() != null && getIntent().getBooleanExtra("layout_preview", false);
+        if (state != null && !layoutPreview) {
             section = state.getString("section", "dashboard");
             query = state.getString("query", "");
             offset = state.getInt("offset");
+            documentImport.restoreState(state);
+        }
+        if (layoutPreview) {
+            organization = "CarboScan";
+            String previewName = getIntent().getStringExtra("preview_name");
+            if (previewName != null && !previewName.isBlank()) personName = previewName;
+            String asked = getIntent().getStringExtra("section");
+            if (asked != null && !asked.isEmpty()) section = asked;
+            getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
+            show();
+            return;
         }
         if (api.token.isEmpty()) showLogin(state); else loadIdentity();
     }
@@ -53,12 +78,25 @@ public final class MainActivity extends Activity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (documentImport != null) documentImport.onPermissionResult(requestCode, grantResults);
     }
+    @Override protected void onResume() {
+        super.onResume();
+        if (documentImport != null) documentImport.onHostResume();
+    }
+    @Override protected void onPause() {
+        if (documentImport != null) documentImport.onHostPause();
+        super.onPause();
+    }
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (documentImport != null) documentImport.onActivityResult(requestCode, resultCode, data);
     }
     @Override public void onBackPressed() {
         if (web != null && web.canGoBack()) { web.goBack(); return; }
+        if ("settings".equals(section)) {
+            section = "dashboard";
+            show();
+            return;
+        }
         super.onBackPressed();
     }
     @Override protected void onSaveInstanceState(Bundle state) {
@@ -66,6 +104,7 @@ public final class MainActivity extends Activity {
         state.putString("section", section);
         state.putString("query", query);
         state.putInt("offset", offset);
+        if (documentImport != null) documentImport.saveState(state);
         if (web != null) web.saveState(state);
     }
     @Override protected void onDestroy() {
@@ -77,23 +116,6 @@ public final class MainActivity extends Activity {
 
     private boolean debugBuild() { return (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0; }
 
-    private static boolean isEmulator() {
-        String fp = Build.FINGERPRINT == null ? "" : Build.FINGERPRINT;
-        String product = Build.PRODUCT == null ? "" : Build.PRODUCT;
-        String model = Build.MODEL == null ? "" : Build.MODEL;
-        String hardware = Build.HARDWARE == null ? "" : Build.HARDWARE;
-        return fp.startsWith("generic") || fp.contains("emulator") || fp.contains("ranchu")
-            || product.contains("sdk") || product.contains("emulator")
-            || model.contains("Emulator") || model.contains("Android SDK")
-            || "goldfish".equals(hardware) || "ranchu".equals(hardware)
-            || "google_sdk".equals(product);
-    }
-
-    private String apiBase() {
-        if (!debugBuild()) return "https://ciblix.com";
-        return isEmulator() ? "http://10.0.2.2:3000" : "https://ciblix.com";
-    }
-
     private int dp(int value) { return ui.dp(value); }
 
     private void frame(String title) {
@@ -102,27 +124,49 @@ public final class MainActivity extends Activity {
         if (web != null) { web.destroy(); web = null; }
         root = ui.column();
         root.setBackgroundColor(UiKit.BG);
+        int side = dp(16);
+        final int topPad = "dashboard".equals(section) ? dp(4) : dp(12);
+        root.setPadding(side, topPad, side, dp(6));
         root.setOnApplyWindowInsetsListener((v, insets) -> {
-            root.setPadding(dp(18), insets.getSystemWindowInsetTop() + dp(10), dp(18), insets.getSystemWindowInsetBottom() + dp(10));
+            v.setPadding(side, topPad + insets.getSystemWindowInsetTop(), side, dp(6) + insets.getSystemWindowInsetBottom());
             return insets;
         });
 
-        LinearLayout header = ui.row();
-        header.addView(ui.brandLogo(32));
-        View spacer = new View(this);
-        spacer.setLayoutParams(new LinearLayout.LayoutParams(0, 1, 1));
-        header.addView(spacer);
-        TextView orgChip = ui.statusPill(organization, 0);
-        header.addView(orgChip);
-        root.addView(header);
+        if ("dashboard".equals(section)) root.addView(dashboardTop());
+        else {
+            LinearLayout header = ui.row();
+            header.addView(ui.brandLogo(28));
+            View spacer = new View(this);
+            spacer.setLayoutParams(new LinearLayout.LayoutParams(0, 1, 1));
+            header.addView(spacer);
+            header.addView(ui.orgBadge(organization));
+            root.addView(header);
+        }
 
-        TextView heading = ui.title(title);
-        heading.setPadding(0, dp(14), 0, dp(2));
-        root.addView(heading);
+        if (title != null && !title.isEmpty()) {
+            LinearLayout titleRow = ui.row();
+            titleRow.setPadding(0, dp(18), 0, 0);
+            TextView heading = ui.pageTitle(title);
+            if ("followups".equals(section)) heading.setTextColor(followupAccent());
+            heading.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1));
+            titleRow.addView(heading);
+            if ("followups".equals(section)) {
+                int accent = followupAccent();
+                titleRow.addView(ui.squareAction(R.drawable.ic_plus, UiKit.wash(accent), accent, "Planifier une relance", () -> {
+                    if (!busy) edit(new JSONObject());
+                }));
+            }
+            root.addView(titleRow);
+        }
 
         status = ui.subtitle("");
+        status.setVisibility(View.GONE);
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         root.addView(status);
+        if (documentImport != null) documentImport.attachStatus(status);
+
+        chrome = ui.column();
+        root.addView(chrome);
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -132,23 +176,28 @@ public final class MainActivity extends Activity {
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         navigation = ui.column();
-        navigation.setPadding(0, dp(10), 0, 0);
+        navigation.setPadding(0, dp(4), 0, 0);
         root.addView(navigation);
         setContentView(root);
         root.requestApplyInsets();
     }
 
     private void attachNav() {
-        String[] routes = {"dashboard", "contacts", "companies", "followups"};
-        String[] labels = {"Accueil", "Contacts", "Entreprises", "Relances"};
+        String[] routes = {"dashboard", "contacts", "companies", "followups", "more"};
+        String[] labels = {"Accueil", "Contacts", "Entreprises", "Relances", "Plus"};
+        int[] icons = {R.drawable.ic_home, R.drawable.ic_people, R.drawable.ic_building, R.drawable.ic_bell, R.drawable.ic_more};
+        int[] accents = {UiKit.SAGE, UiKit.BLUE, UiKit.TURQUOISE, UiKit.CORAL, UiKit.ORANGE};
         LinearLayout bar = ui.row();
-        bar.setBackground(ui.round(UiKit.SURFACE, 16));
-        bar.setPadding(dp(6), dp(6), dp(6), dp(6));
+        bar.setBackground(ui.round(UiKit.SURFACE, 22));
+        bar.setPadding(dp(3), dp(3), dp(3), dp(3));
         bar.setElevation(dp(2));
         for (int i = 0; i < routes.length; i++) {
             final String route = routes[i];
-            Button chip = ui.navItem(labels[i], section.equals(route), () -> {
+            boolean selected = "settings".equals(section) ? "more".equals(route) : !"more".equals(route) && section.equals(route);
+            LinearLayout tab = ui.navTab(icons[i], labels[i], selected, accents[i], () -> {
                 if (busy) return;
+                if ("more".equals(route)) { openMore(); return; }
+                followupScope = "";
                 section = route;
                 offset = 0;
                 query = "";
@@ -156,7 +205,7 @@ public final class MainActivity extends Activity {
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1);
             lp.setMargins(dp(2), 0, dp(2), 0);
-            bar.addView(chip, lp);
+            bar.addView(tab, lp);
         }
         navigation.addView(bar);
     }
@@ -166,7 +215,7 @@ public final class MainActivity extends Activity {
     private void run(Task task, Done done) {
         if (busy) return;
         busy = true;
-        status.setText("Chargement…");
+        if (!"dashboard".equals(section)) showStatus("Chargement…", UiKit.MUTED);
         final int current = generation;
         worker.execute(() -> {
             JSONObject result = null;
@@ -177,20 +226,19 @@ public final class MainActivity extends Activity {
             runOnUiThread(() -> {
                 if (isDestroyed() || current != generation) return;
                 busy = false;
-                status.setText("");
+                showStatus("", UiKit.MUTED);
                 try {
                     if (error != null) throw error;
                     done.run(data);
                 } catch (Exception e) {
-                    if (e instanceof ApiClient.Failure && ((ApiClient.Failure) e).status == 401 && !api.token.isEmpty()) {
+                    if (e instanceof ApiClient.Failure && ((ApiClient.Failure) e).status == 401 && !api.token.isEmpty() && !layoutPreview) {
                         sessions.clear();
                         api.token = "";
                         showLogin(null);
                     } else {
-                        status.setTextColor(UiKit.DANGER);
-                        status.setText(e instanceof java.io.IOException
-                            ? "Serveur inaccessible. Vérifiez l’adresse et la connexion, puis réessayez."
-                            : e.getMessage());
+                        showStatus(e instanceof java.io.IOException
+                            ? "Serveur inaccessible. Vérifiez la connexion, puis réessayez."
+                            : e.getMessage(), UiKit.DANGER);
                     }
                 }
             });
@@ -305,7 +353,7 @@ public final class MainActivity extends Activity {
         status.setPadding(0, dp(6), 0, 0);
         card.addView(status);
 
-        Button connect = ui.primary("Se connecter", () -> {
+        Button connect = ui.vivid("Se connecter", UiKit.SAGE, () -> {
             if (busy) return;
             String address = email.getText().toString().trim();
             String secret = password.getText().toString();
@@ -418,7 +466,9 @@ public final class MainActivity extends Activity {
     private void loadWorkspace() {
         run(() -> api.request("GET", "/api/v1/me", null), me -> {
             organization = me.getJSONObject("organization").getString("name");
+            personName = me.getJSONObject("user").optString("name", "");
             show();
+            if (documentImport != null) documentImport.offerPendingCapture();
         });
     }
     private void onboarding() {
@@ -440,20 +490,38 @@ public final class MainActivity extends Activity {
         attachNav();
     }
 
+    private void showStatus(String message, int color) {
+        if (status == null) return;
+        boolean empty = message == null || message.trim().isEmpty();
+        status.setText(empty ? "" : message);
+        status.setVisibility(empty ? View.GONE : View.VISIBLE);
+        if (!empty) status.setTextColor(color);
+    }
+
     private String title() {
         return switch (section) {
             case "contacts" -> "Contacts";
             case "companies" -> "Entreprises";
-            case "followups" -> "Relances";
-            default -> "Tableau de bord";
+            case "followups" -> switch (followupScope) {
+                case "late" -> "En retard";
+                case "today" -> "Aujourd’hui";
+                case "soon", "upcoming" -> "À venir";
+                case "completed" -> "Terminées";
+                default -> "Relances";
+            };
+            case "settings" -> "Paramètres";
+            default -> "Vue d’ensemble";
         };
     }
 
     private void show() {
-        frame(title());
+        uiHandler.removeCallbacks(directorySearchTask);
+        boolean directory = section.equals("contacts") || section.equals("companies");
+        frame(directory || section.equals("dashboard") ? "" : title());
         attachNav();
         if (section.equals("dashboard")) renderDashboard();
         else if (section.equals("followups")) renderFollowups();
+        else if (section.equals("settings")) renderSettings();
         else renderDirectory();
     }
 
@@ -462,154 +530,683 @@ public final class MainActivity extends Activity {
         documentImport.start(status);
     }
 
-    private void renderDashboard() {
-        LinearLayout tools = ui.row();
-        tools.addView(ui.ghost("Actualiser", () -> { if (!busy) show(); }));
-        View stretch = new View(this);
-        stretch.setLayoutParams(new LinearLayout.LayoutParams(0, 1, 1));
-        tools.addView(stretch);
-        tools.addView(ui.ghost("Mon compte", this::accountMenu));
-        content.addView(tools);
+    private LinearLayout dashboardTop() {
+        LinearLayout block = ui.column();
+        LinearLayout brand = ui.row();
+        brand.addView(ui.brandLogo(22));
+        TextView divider = ui.label("|", 15, Color.rgb(210, 220, 218), false);
+        divider.setPadding(dp(6), 0, dp(6), 0);
+        brand.addView(divider);
+        TextView product = ui.label("CRM Commercial", 12, UiKit.MUTED, false);
+        product.setPadding(0, 0, dp(6), 0);
+        product.setMaxLines(1);
+        product.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        product.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1));
+        brand.addView(product);
+        brand.addView(orgSelector());
+        brand.addView(notifyBell());
+        block.addView(brand);
+        return block;
+    }
 
-        // OCR au premier plan — avant les indicateurs statistiques.
-        LinearLayout scan = ui.scanHero(
-            "Scanner un document",
-            "Carte de visite, fiche ou PDF · photo ou galerie · vérification avant enregistrement.",
-            "Lancer le scan",
-            this::startScan
-        );
-        ui.margin(scan, 4, 12);
-        content.addView(scan);
+    private String greeting() {
+        String name = personName == null ? "" : personName.trim();
+        if (name.isEmpty()) return "Bonjour";
+        int space = name.indexOf(' ');
+        String first = space > 0 ? name.substring(0, space) : name;
+        return "Bonjour " + first + ",";
+    }
 
-        run(() -> api.request("GET", "/api/v1/dashboard", null), data -> {
-            JSONObject counts = data.getJSONObject("counts");
-            LinearLayout metrics = ui.row();
-            metrics.setPadding(0, dp(4), 0, dp(4));
-            String[] keys = {"contacts", "companies", "pending"};
-            String[] names = {"Contacts", "Entreprises", "Relances"};
-            for (int i = 0; i < keys.length; i++) {
-                LinearLayout metric = ui.metricCard(names[i], counts.optString(keys[i], "0"));
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1);
-                if (i > 0) lp.leftMargin = dp(8);
-                metrics.addView(metric, lp);
-            }
-            content.addView(metrics);
-
-            JSONObject periods = data.getJSONObject("periods");
-            String[] periodKeys = {"late", "today", "upcoming"};
-            String[] periodNames = {"En retard", "Aujourd’hui", "À venir"};
-            int[] tones = {2, 0, 1};
-            boolean any = false;
-            for (int i = 0; i < periodKeys.length; i++) {
-                JSONObject page = periods.getJSONObject(periodKeys[i]);
-                JSONArray items = page.getJSONArray("items");
-                content.addView(ui.sectionHeader(periodNames[i], String.valueOf(page.optInt("total"))));
-                if (items.length() == 0) {
-                    LinearLayout empty = ui.surfaceCard();
-                    empty.addView(ui.emptyState(i == 0 ? "Aucune relance en retard." : i == 1 ? "Rien pour aujourd’hui." : "Pas de relance à venir."));
-                    ui.margin(empty, 0, 4);
-                    content.addView(empty);
-                } else {
-                    any = true;
-                    for (int j = 0; j < items.length(); j++) followupCard(items.getJSONObject(j), tones[i]);
-                }
-            }
-            if (!any) {
-                // keep empty states already shown
-            }
+    private FrameLayout notifyBell() {
+        notifyButton = new ImageButton(this);
+        notifyButton.setImageResource(R.drawable.ic_bell);
+        notifyButton.setColorFilter(UiKit.PETROLEUM);
+        notifyButton.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        notifyButton.setBackground(ui.round(Color.WHITE, 999));
+        notifyButton.setBackgroundTintList(null);
+        notifyButton.setStateListAnimator(null);
+        notifyButton.setPadding(dp(8), dp(8), dp(8), dp(8));
+        notifyButton.setMinimumWidth(0);
+        notifyButton.setMinimumHeight(0);
+        notifyButton.setContentDescription("Notifications");
+        notifyButton.setOnClickListener(v -> {
+            if (!busy) openSection("followups", notifyLate > 0 ? "late" : "");
         });
+        FrameLayout bell = new FrameLayout(this);
+        bell.addView(notifyButton, new FrameLayout.LayoutParams(dp(36), dp(36)));
+        notifyDot = new View(this);
+        notifyDot.setBackground(ui.round(UiKit.CORAL, 99));
+        notifyDot.setVisibility(View.GONE);
+        notifyDot.setContentDescription("Relances en retard");
+        FrameLayout.LayoutParams dot = new FrameLayout.LayoutParams(dp(8), dp(8), Gravity.END | Gravity.TOP);
+        dot.topMargin = dp(2);
+        dot.rightMargin = dp(2);
+        bell.addView(notifyDot, dot);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(36), dp(36));
+        lp.leftMargin = dp(8);
+        bell.setLayoutParams(lp);
+        return bell;
+    }
+
+    private LinearLayout orgSelector() {
+        LinearLayout pill = ui.row();
+        pill.setBackground(ui.round(Color.WHITE, 999));
+        pill.setElevation(dp(1));
+        pill.setPadding(dp(10), dp(6), dp(8), dp(6));
+        pill.setMinimumHeight(dp(34));
+        ImageView building = new ImageView(this);
+        building.setImageResource(R.drawable.ic_building);
+        building.setColorFilter(UiKit.SAGE);
+        building.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        pill.addView(building, new LinearLayout.LayoutParams(dp(16), dp(16)));
+        TextView name = ui.label(organization == null || organization.isEmpty() ? "Société" : organization, 13, UiKit.PETROLEUM, true);
+        name.setPadding(dp(6), 0, dp(4), 0);
+        name.setMaxLines(1);
+        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        name.setMaxWidth(dp(108));
+        pill.addView(name);
+        ImageView chevron = new ImageView(this);
+        chevron.setImageResource(R.drawable.ic_chevron);
+        chevron.setColorFilter(UiKit.PETROLEUM);
+        chevron.setRotation(90);
+        chevron.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        pill.addView(chevron, new LinearLayout.LayoutParams(dp(14), dp(14)));
+        pill.setOnClickListener(v -> openMore());
+        pill.setClickable(true);
+        pill.setContentDescription("Changer de société, " + name.getText());
+        return pill;
+    }
+
+    private void openMore() {
+        if (layoutPreview) {
+            new AlertDialog.Builder(this)
+                .setTitle(organization)
+                .setMessage("Le changement de société utilise le compte connecté.")
+                .setPositiveButton("Fermer", null)
+                .show();
+            return;
+        }
+        if (busy) return;
+        section = "settings";
+        show();
+    }
+
+    private void openSection(String route, String scope) {
+        if (busy) return;
+        followupScope = scope == null ? "" : scope;
+        section = route;
+        offset = 0;
+        query = "";
+        show();
+    }
+
+    private void renderDashboard() {
+        content.setPadding(0, 0, 0, dp(8));
+        TextView hello = ui.label(greeting(), 22, UiKit.PETROLEUM, true);
+        hello.setLetterSpacing(-0.03f);
+        hello.setPadding(0, dp(8), 0, 0);
+        hello.setMaxLines(1);
+        hello.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        content.addView(hello);
+        TextView sub = ui.label("Voici la synthèse de votre activité commerciale.", 13, UiKit.MUTED, false);
+        sub.setPadding(0, 0, 0, 0);
+        content.addView(sub);
+        LinearLayout scan = ui.scanBanner(this::startScan);
+        ui.margin(scan, 12, 0);
+        content.addView(scan);
+        if (layoutPreview) {
+            try {
+                String raw = getIntent() == null ? null : getIntent().getStringExtra("dashboard_json");
+                paintDashboard(raw != null && !raw.isEmpty() ? new JSONObject(raw) : previewDashboard());
+            } catch (Exception ignored) {}
+            return;
+        }
+        run(() -> {
+            JSONObject dash = api.request("GET", "/api/v1/dashboard", null);
+            DashboardData.enrich(api, dash);
+            return dash;
+        }, this::paintDashboard);
+    }
+
+    private JSONObject previewDashboard() throws Exception {
+        return new JSONObject()
+            .put("counts", new JSONObject().put("contacts", 0).put("companies", 0).put("pending", 0).put("new_contacts", 0).put("new_companies", 0))
+            .put("periods", new JSONObject()
+                .put("late", new JSONObject().put("total", 0).put("items", new JSONArray()))
+                .put("today", new JSONObject().put("total", 0).put("items", new JSONArray()))
+                .put("upcoming", new JSONObject().put("total", 0).put("items", new JSONArray())))
+            .put("followup_flow", new JSONObject().put("late", 0).put("upcoming", 0).put("completed", 0))
+            .put("portfolio", new JSONObject().put("months", new JSONArray()).put("days", new JSONArray()))
+            .put("contact_statuses", new JSONArray());
+    }
+
+    private void paintDashboard(JSONObject data) throws Exception {
+        dashboardPayload = data;
+        JSONObject counts = data.getJSONObject("counts");
+        JSONObject periods = data.getJSONObject("periods");
+        int late = periods.getJSONObject("late").optInt("total");
+        int today = periods.optJSONObject("today") == null ? 0 : periods.getJSONObject("today").optInt("total");
+        int upcoming = periods.optJSONObject("upcoming") == null ? 0 : periods.getJSONObject("upcoming").optInt("total");
+        notifyLate = late;
+        if (notifyDot != null) notifyDot.setVisibility(late > 0 ? View.VISIBLE : View.GONE);
+        if (notifyButton != null) {
+            notifyButton.setContentDescription(late > 0
+                ? "Notifications, " + late + (late > 1 ? " relances en retard" : " relance en retard")
+                : "Notifications");
+        }
+
+        LinearLayout metrics = ui.row();
+        metrics.setPadding(0, dp(12), 0, 0);
+        int freshContacts = counts.optInt("new_contacts");
+        int freshCompanies = counts.optInt("new_companies");
+        String[] values = {counts.optString("contacts", "0"), counts.optString("companies", "0"), counts.optString("pending", "0")};
+        String[] names = {"Contacts", "Entreprises", "Relances"};
+        String[] extras = {
+            freshContacts > 0 ? "↗ +" + freshContacts : "",
+            freshCompanies > 0 ? "↗ +" + freshCompanies : "",
+            late > 0 ? late + " en retard" : ""
+        };
+        int[] extraColors = {UiKit.SAGE, UiKit.SAGE, UiKit.CORAL};
+        String[] routes = {"contacts", "companies", "followups"};
+        int[] icons = {R.drawable.ic_people, R.drawable.ic_building, R.drawable.ic_bell};
+        int[] tones = {UiKit.BLUE, UiKit.TURQUOISE, UiKit.CORAL};
+        for (int i = 0; i < names.length; i++) {
+            final String route = routes[i];
+            LinearLayout card = ui.kpiTile(icons[i], tones[i], values[i], names[i], extras[i], extraColors[i], () -> openSection(route, ""));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1);
+            if (i > 0) lp.leftMargin = dp(8);
+            metrics.addView(card, lp);
+        }
+        content.addView(metrics);
+
+        View priority = priorityStrip(periods, late, today, upcoming);
+        if (priority != null) content.addView(priority);
+        portfolioHost = portfolioCard(data);
+        content.addView(portfolioHost);
+        content.addView(lowerCharts(data));
+    }
+
+    private View priorityStrip(JSONObject periods, int late, int today, int upcoming) {
+        int soon = today + upcoming;
+        if (late <= 0 && soon <= 0) return null;
+        LinearLayout card = ui.surfaceCard();
+        card.setPadding(0, 0, 0, 0);
+        card.setElevation(dp(1));
+        LinearLayout row = ui.row();
+        row.setGravity(Gravity.TOP);
+        if (late > 0) row.addView(priorityCell(periods.optJSONObject("late"), late, true), new LinearLayout.LayoutParams(0, -2, 1));
+        if (late > 0 && soon > 0) {
+            View rule = new View(this);
+            rule.setBackgroundColor(Color.rgb(226, 232, 230));
+            LinearLayout.LayoutParams ruleLp = new LinearLayout.LayoutParams(dp(1), dp(56));
+            ruleLp.gravity = Gravity.CENTER_VERTICAL;
+            row.addView(rule, ruleLp);
+        }
+        if (soon > 0) {
+            JSONObject source = today > 0 ? periods.optJSONObject("today") : periods.optJSONObject("upcoming");
+            row.addView(priorityCell(source, soon, false), new LinearLayout.LayoutParams(0, -2, 1));
+        }
+        card.addView(row);
+        ui.margin(card, 12, 0);
+        return card;
+    }
+
+    private LinearLayout priorityCell(JSONObject page, int total, boolean urgent) {
+        JSONArray items = page == null ? null : page.optJSONArray("items");
+        JSONObject first = items == null || items.length() == 0 ? null : items.optJSONObject(0);
+        String subject = first == null ? "" : first.optString("subject");
+        String title = urgent ? "Actions prioritaires" : "Prochaines relances";
+        String primary = !subject.isEmpty()
+            ? subject
+            : total + (urgent
+                ? (total > 1 ? " relances en retard" : " relance en retard")
+                : (total > 1 ? " relances à venir" : " relance à venir"));
+        String secondary = subject.isEmpty() ? "" : (urgent
+            ? (total > 1 ? total + " en retard" : "En retard")
+            : total + (total > 1 ? " à venir" : " à venir"));
+        String scope = urgent ? "late" : "soon";
+        LinearLayout cell = ui.column();
+        cell.setPadding(dp(12), dp(10), dp(10), dp(10));
+        LinearLayout head = ui.row();
+        ImageView mark = new ImageView(this);
+        mark.setImageResource(urgent ? R.drawable.ic_target : R.drawable.ic_calendar);
+        mark.setColorFilter(urgent ? UiKit.CORAL : UiKit.SAGE);
+        mark.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        head.addView(mark, new LinearLayout.LayoutParams(dp(16), dp(16)));
+        TextView heading = ui.label(title, 12, UiKit.PETROLEUM, true);
+        heading.setPadding(dp(6), 0, 0, 0);
+        heading.setMaxLines(1);
+        heading.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        head.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
+        cell.addView(head);
+        TextView line = ui.label(primary, 13, UiKit.MUTED, false);
+        line.setPadding(0, dp(6), 0, 0);
+        line.setMaxLines(2);
+        line.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        cell.addView(line);
+        if (!secondary.isEmpty()) {
+            TextView more = ui.label(secondary, 12, urgent ? UiKit.CORAL : UiKit.SAGE, true);
+            more.setPadding(0, dp(2), 0, 0);
+            more.setMaxLines(1);
+            cell.addView(more);
+        }
+        cell.setOnClickListener(v -> openSection("followups", scope));
+        cell.setClickable(true);
+        cell.setContentDescription(title + ", " + primary);
+        return cell;
+    }
+
+    private View portfolioCard(JSONObject data) throws Exception {
+        LinearLayout card = ui.surfaceCard();
+        card.setElevation(dp(1));
+        chartHeading(card, "Évolution du portefeuille", "Contacts et entreprises créés");
+        JSONObject portfolio = data.optJSONObject("portfolio");
+        if (portfolio == null) {
+            card.addView(hint(data.optBoolean("portfolio_skipped")
+                ? "Trop de fiches pour calculer l’historique sur l’appareil."
+                : "L’historique des créations n’est pas disponible."));
+            ui.margin(card, 12, 0);
+            return card;
+        }
+        LinearLayout chips = ui.row();
+        chips.setGravity(Gravity.END);
+        chips.addView(windowChip("30d", "30 j"));
+        chips.addView(windowChip("3m", "3 mois"));
+        chips.addView(windowChip("6m", "6 mois"));
+        chips.addView(windowChip("12m", "12 mois"));
+        card.addView(chips);
+        JSONArray rows = portfolio.optJSONArray("30d".equals(chartWindow) ? "days" : "months");
+        int count = switch (chartWindow) {
+            case "30d" -> 30;
+            case "3m" -> 3;
+            case "12m" -> 12;
+            default -> 6;
+        };
+        BoardCharts.Window window = BoardCharts.slice(rows == null ? new JSONArray() : rows, count);
+        boolean any = false;
+        for (int value : window.contacts) if (value > 0) any = true;
+        for (int value : window.companies) if (value > 0) any = true;
+        if (!any) {
+            card.addView(hint("Aucune création sur cette période."));
+            ui.margin(card, 12, 0);
+            return card;
+        }
+        LinearLayout plot = ui.row();
+        plot.setGravity(Gravity.CENTER_VERTICAL);
+        BoardCharts.LineChart chart = new BoardCharts.LineChart(this);
+        chart.setSeries(window.buckets, window.contacts, window.companies);
+        plot.addView(chart, new LinearLayout.LayoutParams(0, dp(168), 1));
+        LinearLayout legend = ui.column();
+        legend.setMinimumWidth(dp(96));
+        legend.setPadding(dp(8), 0, 0, 0);
+        legend.addView(seriesLegend(UiKit.SAGE, "Contacts", window.contactSum, window.contactDelta));
+        legend.addView(seriesLegend(UiKit.ORANGE, "Entreprises", window.companySum, window.companyDelta));
+        plot.addView(legend);
+        card.addView(plot);
+        ui.margin(card, 12, 0);
+        return card;
+    }
+
+    private TextView windowChip(String id, String label) {
+        boolean on = id.equals(chartWindow);
+        TextView chip = ui.label(label, 12, on ? UiKit.SAGE : UiKit.MUTED, on);
+        chip.setBackground(ui.round(on ? UiKit.MIST : Color.TRANSPARENT, 999));
+        chip.setPadding(dp(8), dp(4), dp(8), dp(4));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+        lp.leftMargin = dp(2);
+        chip.setLayoutParams(lp);
+        chip.setOnClickListener(v -> selectWindow(id));
+        chip.setContentDescription(label);
+        return chip;
+    }
+
+    private void selectWindow(String window) {
+        if (window.equals(chartWindow) || dashboardPayload == null || content == null || portfolioHost == null) return;
+        chartWindow = window;
+        int index = content.indexOfChild(portfolioHost);
+        if (index < 0) return;
+        try {
+            View next = portfolioCard(dashboardPayload);
+            content.removeView(portfolioHost);
+            content.addView(next, index);
+            portfolioHost = next;
+        } catch (Exception e) {
+            showStatus(e.getMessage(), UiKit.DANGER);
+        }
+    }
+
+    private LinearLayout seriesLegend(int color, String name, int total, String delta) {
+        LinearLayout box = ui.column();
+        box.setPadding(0, dp(2), 0, dp(6));
+        LinearLayout head = ui.row();
+        View dot = new View(this);
+        dot.setBackground(ui.round(color, 99));
+        head.addView(dot, new LinearLayout.LayoutParams(dp(8), dp(8)));
+        TextView caption = ui.label(name, 12, UiKit.MUTED, false);
+        caption.setPadding(dp(6), 0, 0, 0);
+        head.addView(caption);
+        box.addView(head);
+        TextView value = ui.label(String.valueOf(total), 18, UiKit.PETROLEUM, true);
+        value.setPadding(0, 0, 0, 0);
+        box.addView(value);
+        if (delta != null && !delta.isEmpty()) {
+            int tone = delta.startsWith("↘") ? UiKit.CORAL : delta.startsWith("0") ? UiKit.MUTED : UiKit.SAGE;
+            TextView change = ui.label(delta, 11, tone, true);
+            change.setPadding(0, 0, 0, 0);
+            box.addView(change);
+        }
+        box.setContentDescription(name + ", " + total + (delta == null ? "" : ", " + delta));
+        return box;
+    }
+
+    private View lowerCharts(JSONObject data) throws Exception {
+        float widthDp = getResources().getDisplayMetrics().widthPixels / getResources().getDisplayMetrics().density;
+        boolean side = widthDp >= 360f;
+        LinearLayout wrap = side ? ui.row() : ui.column();
+        wrap.setGravity(Gravity.TOP);
+        LinearLayout bars = followupChart(data);
+        LinearLayout donut = statusChart(data);
+        if (side) {
+            bars.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1));
+            LinearLayout.LayoutParams right = new LinearLayout.LayoutParams(0, -2, 1);
+            right.leftMargin = dp(8);
+            donut.setLayoutParams(right);
+        } else ui.margin(donut, 8, 0);
+        wrap.addView(bars);
+        wrap.addView(donut);
+        ui.margin(wrap, 12, 0);
+        return wrap;
+    }
+
+    private LinearLayout followupChart(JSONObject data) {
+        LinearLayout card = ui.surfaceCard();
+        card.setPadding(dp(12), dp(12), dp(12), dp(8));
+        card.setElevation(dp(1));
+        chartHeading(card, "Relances commerciales", "État des relances");
+        JSONObject flow = data.optJSONObject("followup_flow");
+        if (flow == null) {
+            card.addView(hint("Les totaux de relances ne sont pas disponibles."));
+            return card;
+        }
+        int late = flow.optInt("late");
+        int soon = flow.optInt("upcoming");
+        int done = flow.optInt("completed");
+        if (late + soon + done == 0) {
+            card.addView(hint("Aucune relance enregistrée."));
+            return card;
+        }
+        BoardCharts.Bars bars = new BoardCharts.Bars(this);
+        bars.setValues(
+            new String[]{"En retard", "À venir", "Terminées"},
+            new int[]{late, soon, done},
+            new int[]{UiKit.CORAL, UiKit.SAGE, UiKit.PETROLEUM});
+        bars.setOnBucket(index -> {
+            if (busy) return;
+            String scope = switch (index) {
+                case 0 -> "late";
+                case 1 -> "soon";
+                default -> "completed";
+            };
+            openSection("followups", scope);
+        });
+        card.addView(bars, new LinearLayout.LayoutParams(-1, dp(176)));
+        return card;
+    }
+
+    private LinearLayout statusChart(JSONObject data) throws Exception {
+        LinearLayout card = ui.surfaceCard();
+        card.setPadding(dp(12), dp(12), dp(12), dp(8));
+        card.setElevation(dp(1));
+        chartHeading(card, "Répartition des contacts", "Par statut commercial");
+        if (data.optBoolean("statuses_skipped")) {
+            card.addView(hint("Répartition indisponible pour ce volume."));
+            return card;
+        }
+        JSONArray statuses = data.optJSONArray("contact_statuses");
+        if (statuses == null) {
+            card.addView(hint("La répartition par statut n’est pas disponible."));
+            return card;
+        }
+        if (statuses.length() == 0) {
+            card.addView(hint("Aucun statut commercial renseigné."));
+            return card;
+        }
+        String[] names = new String[statuses.length()];
+        int[] counts = new int[statuses.length()];
+        for (int i = 0; i < statuses.length(); i++) {
+            JSONObject row = statuses.getJSONObject(i);
+            names[i] = row.optString("name");
+            counts[i] = row.optInt("count");
+        }
+        BoardCharts.Donut donut = new BoardCharts.Donut(this);
+        donut.setSlices(names, counts);
+        card.addView(donut, new LinearLayout.LayoutParams(-1, -2));
+        return card;
+    }
+
+    private void chartHeading(LinearLayout card, String title, String subtitle) {
+        TextView heading = ui.label(title, 15, UiKit.PETROLEUM, true);
+        heading.setPadding(0, 0, 0, 0);
+        card.addView(heading);
+        TextView detail = ui.label(subtitle, 12, UiKit.MUTED, false);
+        detail.setPadding(0, dp(1), 0, dp(6));
+        card.addView(detail);
+    }
+
+    private TextView hint(String message) {
+        TextView text = ui.label(message, 13, UiKit.MUTED, false);
+        text.setPadding(0, dp(8), 0, dp(8));
+        return text;
     }
 
     private void renderDirectory() {
         boolean contacts = section.equals("contacts");
-        // Action OCR directe (pas via paramètres / menu secondaire).
-        LinearLayout scan = ui.scanHero(
-            contacts ? "Scanner une carte ou un contact" : "Scanner une fiche entreprise",
-            "Appareil photo ou galerie · OCR Ciblix · corrigez avant d’enregistrer.",
-            "Scanner maintenant",
-            this::startScan
-        );
-        ui.margin(scan, 0, 10);
-        content.addView(scan);
+        LinearLayout titleRow = ui.row();
+        titleRow.setPadding(0, dp(16), 0, 0);
+        int accent = contacts ? UiKit.BLUE : UiKit.TURQUOISE;
+        TextView heading = ui.pageTitle(contacts ? "Contacts" : "Entreprises");
+        heading.setTextColor(accent);
+        heading.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1));
+        titleRow.addView(heading);
+        ImageButton add = ui.squareAction(R.drawable.ic_plus, UiKit.wash(accent), accent, contacts ? "Nouveau contact" : "Nouvelle entreprise", () -> openCreate());
+        LinearLayout.LayoutParams addLp = (LinearLayout.LayoutParams) add.getLayoutParams();
+        addLp.rightMargin = dp(8);
+        titleRow.addView(add);
+        titleRow.addView(ui.squareAction(R.drawable.ic_scan_white, UiKit.ORANGE, Color.WHITE, contacts ? "Scanner une carte de visite" : "Scanner une fiche entreprise", this::startScan));
+        chrome.addView(titleRow);
 
-        LinearLayout searchRow = ui.row();
-        EditText search = ui.searchField(query);
-        search.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1));
-        searchRow.addView(search);
-        Button go = ui.primary("OK", () -> {
-            if (busy) return;
-            query = search.getText().toString().trim();
-            offset = 0;
-            show();
-        });
-        LinearLayout.LayoutParams goLp = new LinearLayout.LayoutParams(-2, -2);
-        goLp.leftMargin = dp(8);
-        goLp.topMargin = 0;
-        goLp.bottomMargin = 0;
-        go.setLayoutParams(goLp);
-        go.setPadding(dp(16), dp(12), dp(16), dp(12));
-        searchRow.addView(go);
-        content.addView(searchRow);
+        chrome.addView(ui.directorySearch(
+            contacts ? "Rechercher un contact…" : "Rechercher une entreprise…",
+            query,
+            this::onDirectoryQuery
+        ));
 
-        content.addView(ui.primary("+ " + (contacts ? "Nouveau contact" : "Nouvelle entreprise"), () -> {
-            if (!busy) edit(new JSONObject());
-        }));
+        LinearLayout meta = ui.row();
+        meta.setPadding(dp(4), dp(8), dp(4), dp(8));
+        directoryCount = ui.subtitle("");
+        directoryCount.setPadding(0, 0, 0, 0);
+        directoryCount.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1));
+        meta.addView(directoryCount);
+        directoryProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleSmall);
+        directoryProgress.setVisibility(View.GONE);
+        meta.addView(directoryProgress);
+        chrome.addView(meta);
 
+        directoryList = ui.column();
+        content.addView(directoryList);
+        fetchDirectory(true);
+    }
+
+    private void openCreate() {
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (busy || now - lastCreateTap < 700) return;
+        lastCreateTap = now;
+        edit(new JSONObject());
+    }
+
+    private void onDirectoryQuery(String raw) {
+        String next = raw == null ? "" : raw.trim();
+        if (next.equals(query)) return;
+        query = next;
+        offset = 0;
+        uiHandler.removeCallbacks(directorySearchTask);
+        uiHandler.postDelayed(directorySearchTask, 280);
+    }
+
+    private void fetchDirectory(boolean replace) {
+        if (layoutPreview) {
+            try {
+                boolean contacts = "contacts".equals(section);
+                String name = contacts ? "Amina Ben Ali" : "CarboScan";
+                String extra = contacts ? "Directrice" : "La Soukra";
+                String needle = query == null ? "" : query.toLowerCase(java.util.Locale.ROOT);
+                boolean match = needle.isEmpty()
+                    || name.toLowerCase(java.util.Locale.ROOT).contains(needle)
+                    || extra.toLowerCase(java.util.Locale.ROOT).contains(needle);
+                JSONArray items = new JSONArray();
+                if (match) {
+                    JSONObject item = new JSONObject().put("id", "preview").put("name", name);
+                    if (contacts) item.put("job_title", extra);
+                    else item.put("city", extra);
+                    items.put(item);
+                }
+                paintDirectory(new JSONObject().put("total", items.length()).put("items", items), section, true);
+            } catch (Exception ignored) {}
+            return;
+        }
+        final int ticket = ++directoryTicket;
+        final int gen = generation;
         final String route = section;
-        run(() -> api.request("GET", "/api/v1/" + route + "?limit=25&offset=" + offset + "&q=" + URLEncoder.encode(query, "UTF-8"), null), data -> {
-            JSONArray items = data.getJSONArray("items");
-            int total = data.getInt("total");
-            content.addView(ui.subtitle(total == 0 ? "Aucun résultat" : (offset + 1) + "–" + (offset + items.length()) + " sur " + total));
-            if (total == 0) {
-                LinearLayout empty = ui.surfaceCard();
-                empty.addView(ui.emptyState(section.equals("contacts")
-                    ? "Aucun contact pour l’instant. Créez une fiche ou importez un document."
-                    : "Aucune entreprise pour l’instant."));
-                ui.margin(empty, 8, 0);
-                content.addView(empty);
-            }
-            for (int i = 0; i < items.length(); i++) {
-                JSONObject item = items.getJSONObject(i);
-                String detail = route.equals("contacts")
-                    ? join(" · ", clean(item, "job_title"), clean(item, "phone"))
-                    : join(" · ", clean(item, "sector"), clean(item, "city"), clean(item, "relation_type"));
-                LinearLayout row = ui.listRow(item.optString("name"), detail, "Ouvrir", () -> detail(item));
-                ui.margin(row, 8, 0);
-                content.addView(row);
-            }
-            LinearLayout pager = ui.row();
-            if (offset > 0) {
-                Button prev = ui.secondary("Précédent", () -> {
-                    if (busy) return;
-                    offset = Math.max(0, offset - 25);
-                    show();
-                });
-                prev.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1));
-                pager.addView(prev);
-            }
-            if (offset + items.length() < total) {
-                Button next = ui.secondary("Suivant", () -> {
-                    if (busy) return;
-                    offset += 25;
-                    show();
-                });
-                LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(0, -2, 1);
-                if (pager.getChildCount() > 0) nlp.leftMargin = dp(8);
-                next.setLayoutParams(nlp);
-                pager.addView(next);
-            }
-            if (pager.getChildCount() > 0) {
-                ui.margin(pager, 12, 0);
-                content.addView(pager);
-            }
+        final String q = query;
+        final int off = replace ? 0 : offset;
+        if (replace) offset = 0;
+        directoryLoading = true;
+        if (directoryProgress != null) directoryProgress.setVisibility(View.VISIBLE);
+        if (replace && directoryCount != null && directoryList != null && directoryList.getChildCount() == 0) {
+            directoryCount.setText("Chargement…");
+        }
+        worker.execute(() -> {
+            JSONObject data = null;
+            Exception failure = null;
+            try {
+                data = api.request("GET", "/api/v1/" + route + "?limit=25&offset=" + off + "&q=" + URLEncoder.encode(q, "UTF-8"), null);
+            } catch (Exception e) { failure = e; }
+            final JSONObject payload = data;
+            final Exception error = failure;
+            runOnUiThread(() -> {
+                if (isDestroyed() || gen != generation || ticket != directoryTicket) return;
+                directoryLoading = false;
+                if (directoryProgress != null) directoryProgress.setVisibility(View.GONE);
+                if (error != null) {
+                    if (error instanceof ApiClient.Failure && ((ApiClient.Failure) error).status == 401 && !api.token.isEmpty()) {
+                        sessions.clear();
+                        api.token = "";
+                        showLogin(null);
+                        return;
+                    }
+                    showStatus(error instanceof java.io.IOException
+                        ? "Serveur inaccessible. Vérifiez la connexion, puis réessayez."
+                        : error.getMessage(), UiKit.DANGER);
+                    if (replace && directoryCount != null) directoryCount.setText("");
+                    return;
+                }
+                try { paintDirectory(payload, route, replace); }
+                catch (Exception e) { showStatus(e.getMessage(), UiKit.DANGER); }
+            });
         });
     }
 
+    private void paintDirectory(JSONObject data, String route, boolean replace) throws Exception {
+        if (directoryList == null || directoryCount == null) return;
+        boolean contacts = route.equals("contacts");
+        if (replace) directoryList.removeAllViews();
+        else {
+            View previous = directoryList.findViewWithTag("more");
+            if (previous != null) directoryList.removeView(previous);
+        }
+        JSONArray items = data.getJSONArray("items");
+        int total = data.getInt("total");
+        String noun = contacts
+            ? (total > 1 || total == 0 ? "contacts" : "contact")
+            : (total > 1 || total == 0 ? "entreprises" : "entreprise");
+        directoryCount.setText(total + " " + noun);
+        directoryCount.setTextColor(contacts ? UiKit.BLUE : UiKit.TURQUOISE);
+        if (items.length() == 0 && replace) {
+            LinearLayout empty = ui.column();
+            empty.setGravity(Gravity.CENTER_HORIZONTAL);
+            empty.setPadding(dp(12), dp(36), dp(12), dp(8));
+            boolean searching = query != null && !query.isEmpty();
+            TextView message = ui.label(searching
+                ? (contacts ? "Aucun contact trouvé" : "Aucune entreprise trouvée")
+                : (contacts ? "Aucun contact pour l’instant." : "Aucune entreprise pour l’instant."), 15, UiKit.MUTED, false);
+            message.setGravity(Gravity.CENTER);
+            empty.addView(message);
+            if (!searching) {
+                TextView hint = ui.subtitle(contacts
+                    ? "Créez une fiche avec + ou scannez une carte de visite."
+                    : "Créez une fiche avec + ou scannez un document.");
+                hint.setGravity(Gravity.CENTER);
+                hint.setPadding(0, dp(6), 0, dp(14));
+                empty.addView(hint);
+                LinearLayout actions = ui.row();
+                actions.setGravity(Gravity.CENTER);
+                actions.addView(ui.chip("Créer", false, this::openCreate));
+                actions.addView(ui.chip("Scanner", true, this::startScan));
+                empty.addView(actions);
+            }
+            directoryList.addView(empty);
+            return;
+        }
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject item = items.getJSONObject(i);
+            String city = clean(item, "city");
+            String detail = contacts
+                ? join(" · ", clean(item, "job_title"), clean(item, "phone"))
+                : city;
+            LinearLayout card = ui.entityCard(
+                contacts ? R.drawable.ic_person : R.drawable.ic_building,
+                contacts ? UiKit.BLUE : UiKit.TURQUOISE,
+                item.optString("name"),
+                detail,
+                !contacts && !city.trim().isEmpty(),
+                () -> detail(item)
+            );
+            ui.margin(card, i == 0 && replace ? 2 : 8, 0);
+            directoryList.addView(card);
+        }
+        int shown = offset + items.length();
+        if (shown < total) {
+            TextView more = ui.label("Afficher la suite", 14, contacts ? UiKit.BLUE : UiKit.TURQUOISE, true);
+            more.setGravity(Gravity.CENTER);
+            more.setPadding(0, dp(14), 0, dp(8));
+            more.setTag("more");
+            more.setOnClickListener(v -> {
+                if (directoryLoading) return;
+                offset = shown;
+                fetchDirectory(false);
+            });
+            directoryList.addView(more);
+        }
+    }
+
     private void renderFollowups() {
-        content.addView(ui.primary("+ Planifier une relance", () -> {
-            if (!busy) edit(new JSONObject());
-        }));
-        run(() -> api.request("GET", "/api/v1/followups?limit=25&offset=" + offset + "&q=" + URLEncoder.encode(query, "UTF-8"), null), data -> {
+        if (layoutPreview) {
+            try {
+                followupCard(new JSONObject().put("id", "preview-late").put("subject", "Relancer Amina").put("status", "pending").put("due_at", "2026-11-01T09:00:00Z"), 2);
+                followupCard(new JSONObject().put("id", "preview-today").put("subject", "Appel CarboScan").put("status", "pending").put("due_at", java.time.OffsetDateTime.now().toString()), 0);
+            } catch (Exception ignored) {}
+            return;
+        }
+        if ("soon".equals(followupScope)) {
+            renderSoonFollowups();
+            return;
+        }
+        String scopeQuery = switch (followupScope) {
+            case "completed" -> "&status=completed";
+            case "late", "today", "upcoming" -> "&status=pending&scope=" + followupScope;
+            default -> "";
+        };
+        run(() -> api.request("GET", "/api/v1/followups?limit=25&offset=" + offset + "&q=" + URLEncoder.encode(query, "UTF-8") + scopeQuery, null), data -> {
             JSONArray items = data.getJSONArray("items");
             int total = data.getInt("total");
             content.addView(ui.subtitle(total == 0 ? "Aucune relance" : (offset + 1) + "–" + (offset + items.length()) + " sur " + total));
@@ -634,6 +1231,51 @@ public final class MainActivity extends Activity {
                 show();
             }));
             if (offset + items.length() < total) content.addView(ui.secondary("Page suivante", () -> {
+                if (busy) return;
+                offset += 25;
+                show();
+            }));
+        });
+    }
+
+    private void renderSoonFollowups() {
+        run(() -> {
+            String q = URLEncoder.encode(query, "UTF-8");
+            JSONObject today = api.request("GET", "/api/v1/followups?limit=25&offset=0&status=pending&scope=today&q=" + q, null);
+            JSONObject upcoming = api.request("GET", "/api/v1/followups?limit=25&offset=" + offset + "&status=pending&scope=upcoming&q=" + q, null);
+            JSONArray items = new JSONArray();
+            if (offset == 0) {
+                JSONArray todays = today.getJSONArray("items");
+                for (int i = 0; i < todays.length(); i++) items.put(todays.get(i));
+            }
+            JSONArray next = upcoming.getJSONArray("items");
+            for (int i = 0; i < next.length(); i++) items.put(next.get(i));
+            return new JSONObject()
+                .put("items", items)
+                .put("total", today.getInt("total") + upcoming.getInt("total"))
+                .put("upcoming_shown", next.length())
+                .put("upcoming_total", upcoming.getInt("total"));
+        }, data -> {
+            JSONArray items = data.getJSONArray("items");
+            int total = data.getInt("total");
+            content.addView(ui.subtitle(total == 0 ? "Aucune relance à venir" : total + (total > 1 ? " relances à venir" : " relance à venir")));
+            if (total == 0) {
+                LinearLayout empty = ui.surfaceCard();
+                empty.addView(ui.emptyState("Aucune relance à venir."));
+                ui.margin(empty, 8, 0);
+                content.addView(empty);
+                return;
+            }
+            for (int i = 0; i < items.length(); i++) {
+                JSONObject item = items.getJSONObject(i);
+                followupCard(item, dueTone(clean(item, "due_at")));
+            }
+            if (offset > 0) content.addView(ui.secondary("Page précédente", () -> {
+                if (busy) return;
+                offset = Math.max(0, offset - 25);
+                show();
+            }));
+            if (offset + data.optInt("upcoming_shown") < data.optInt("upcoming_total")) content.addView(ui.secondary("Page suivante", () -> {
                 if (busy) return;
                 offset += 25;
                 show();
@@ -679,8 +1321,15 @@ public final class MainActivity extends Activity {
             case "cancelled" -> "Annulée";
             default -> tone == 2 ? "En retard" : tone == 0 ? "Aujourd’hui" : "À venir";
         };
-        LinearLayout card = ui.surfaceCard();
-        ui.margin(card, 8, 0);
+        int stripe = tone == 0 ? UiKit.TURQUOISE : tone == 2 ? UiKit.CORAL : tone == 1 ? UiKit.ORANGE : UiKit.MUTED;
+        LinearLayout shell = ui.column();
+        ui.margin(shell, 8, 0);
+        shell.setBackground(ui.round(stripe, 16));
+        shell.setPadding(dp(5), 0, 0, 0);
+        shell.setElevation(dp(2));
+        LinearLayout card = ui.column();
+        card.setBackground(ui.round(UiKit.SURFACE, 16));
+        card.setPadding(dp(12), dp(12), dp(12), dp(8));
         LinearLayout top = ui.row();
         TextView subject = ui.label(item.optString("subject"), 16, UiKit.PETROLEUM, true);
         subject.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1));
@@ -706,23 +1355,71 @@ public final class MainActivity extends Activity {
             actions.addView(done);
         }
         card.addView(actions);
-        content.addView(card);
+        shell.addView(card, new LinearLayout.LayoutParams(-1, -2));
+        content.addView(shell);
+    }
+
+    private int followupAccent() {
+        return switch (followupScope) {
+            case "late" -> UiKit.CORAL;
+            case "today" -> UiKit.TURQUOISE;
+            case "soon", "upcoming", "completed" -> UiKit.SAGE;
+            default -> UiKit.ORANGE;
+        };
     }
 
     private void detail(JSONObject item) {
         if (busy) return;
         String route = section;
-        run(() -> api.request("GET", "/api/v1/" + route + "/" + item.getString("id"), null), record -> {
+        if (layoutPreview) {
+            showRecord(route, item);
+            return;
+        }
+        run(() -> api.request("GET", "/api/v1/" + route + "/" + item.getString("id"), null), this::showRecordBound);
+    }
+
+    private void showRecordBound(JSONObject record) {
+        showRecord(section, record);
+    }
+
+    private static String fieldLabel(String key) {
+        return switch (key) {
+            case "job_title" -> "Fonction";
+            case "department" -> "Service";
+            case "phone" -> "Téléphone";
+            case "phone_work" -> "Téléphone pro";
+            case "whatsapp" -> "WhatsApp";
+            case "source" -> "Source";
+            case "status" -> "Statut";
+            case "sector" -> "Secteur";
+            case "relation_type" -> "Relation";
+            case "city" -> "Ville";
+            case "country" -> "Pays";
+            case "email" -> "E-mail";
+            case "website" -> "Site web";
+            case "company_size" -> "Taille";
+            case "description" -> "Description";
+            case "address" -> "Adresse";
+            case "linkedin" -> "LinkedIn";
+            case "socials" -> "Autres réseaux";
+            default -> key.replace('_', ' ');
+        };
+    }
+
+    private void showRecord(String route, JSONObject record) {
+        try {
             LinearLayout body = ui.column();
             body.setPadding(dp(8), 0, dp(8), 0);
-            body.addView(ui.title(record.optString("name")));
+            TextView heading = ui.title(record.optString("name"));
+            heading.setTextColor(route.equals("contacts") ? UiKit.BLUE : UiKit.TURQUOISE);
+            body.addView(heading);
             String[] keys = route.equals("contacts")
                 ? new String[]{"job_title", "department", "phone", "phone_work", "whatsapp", "source", "status"}
                 : new String[]{"sector", "relation_type", "city", "country", "phone", "email", "website", "status", "source", "company_size", "description", "address", "linkedin", "socials"};
             for (String key : keys) {
                 String value = clean(record, key);
                 if (value.trim().isEmpty()) continue;
-                body.addView(ui.caption(key.replace('_', ' ')));
+                body.addView(ui.caption(fieldLabel(key)));
                 body.addView(ui.label(value, 15, UiKit.PETROLEUM, false));
             }
             body.addView(ui.primary("Modifier", () -> edit(record)));
@@ -739,7 +1436,9 @@ public final class MainActivity extends Activity {
             ScrollView scroll = new ScrollView(this);
             scroll.addView(body);
             new AlertDialog.Builder(this).setView(scroll).setPositiveButton("Fermer", null).show();
-        });
+        } catch (Exception e) {
+            showStatus(e.getMessage(), UiKit.DANGER);
+        }
     }
     private void note(String route, JSONObject record) {
         LinearLayout wrap = ui.column();
@@ -843,40 +1542,20 @@ public final class MainActivity extends Activity {
         }));
         dialog.show();
     }
-    private void accountMenu() {
-        if (busy) return;
-        run(() -> api.request("GET", "/api/v1/me", null), me -> {
-            JSONArray orgs = me.getJSONArray("organizations");
-            LinearLayout body = ui.column();
-            body.setPadding(dp(8), 0, dp(8), 0);
-            body.addView(ui.caption("Compte"));
-            body.addView(ui.label(me.getJSONObject("user").getString("email"), 15, UiKit.PETROLEUM, false));
-            body.addView(ui.caption("Espaces"));
-            for (int i = 0; i < orgs.length(); i++) {
-                JSONObject org = orgs.getJSONObject(i);
-                body.addView(ui.secondary(org.getString("name"), () -> {
-                    try {
-                        JSONObject payload = new JSONObject().put("organization_id", org.getString("id"));
-                        run(() -> api.request("POST", "/api/v1/organizations/switch", payload), d -> {
-                            section = "dashboard";
-                            offset = 0;
-                            query = "";
-                            loadIdentity();
-                        });
-                    } catch (Exception e) {
-                        status.setTextColor(UiKit.DANGER);
-                        status.setText(e.getMessage());
-                    }
-                }));
-            }
-            body.addView(ui.primary("Se déconnecter", () -> run(() -> api.request("POST", "/api/v1/auth/logout", new JSONObject()), d -> {
-                sessions.clear();
-                api.token = "";
-                showLogin(null);
-            })));
-            ScrollView scroll = new ScrollView(this);
-            scroll.addView(body);
-            new AlertDialog.Builder(this).setTitle("Paramètres").setView(scroll).setPositiveButton("Fermer", null).show();
-        });
+    private void renderSettings() {
+        if (layoutPreview) {
+            content.addView(ui.subtitle("Les paramètres utilisent le compte connecté."));
+            return;
+        }
+        new SettingsScreen(this, ui, api, worker, () -> generation, () -> {
+            sessions.clear();
+            api.token = "";
+            showLogin(null);
+        }, () -> {
+            section = "dashboard";
+            offset = 0;
+            query = "";
+            loadIdentity();
+        }).load(content);
     }
 }

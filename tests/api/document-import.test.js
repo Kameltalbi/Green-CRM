@@ -88,9 +88,11 @@ test('Normalisation : entreprise seule, contact personne, coût estimé', () => 
   assert.doesNotMatch(publicProviderError({message: 'API key not valid AIzaSySECRETKEY1234567890'}).message, /AIza|API key/i);
   assert.match(publicProviderError({code: 'quota', providerStatus: 429}).message, /quota/);
   assert.match(publicProviderError({code: 'network'}).message, /injoignable/);
-  assert.match(publicProviderError({code: 'timeout'}).message, /photo est conservée/);
+  assert.match(publicProviderError({code: 'timeout'}).message, /Réessayez/);
+  assert.doesNotMatch(publicProviderError({code: 'timeout'}).message, /conservée/);
   assert.equal(publicProviderError({status: 400, message: 'Image JPEG invalide.'}).status, 400);
-  assert.match(publicProviderError({providerStatus: 503, message: 'This model is currently experiencing high demand.'}).message, /photo est conservée/);
+  assert.match(publicProviderError({providerStatus: 503, message: 'This model is currently experiencing high demand.'}).message, /Réessayez/);
+  assert.doesNotMatch(publicProviderError({providerStatus: 503, message: 'This model is currently experiencing high demand.'}).message, /conservée/);
   const namedOnly = normalizeExtraction({companies: [], contacts: [{name: 'Amina Ben Salah', company_name: 'CarboScan', emails: []}]});
   assert.equal(namedOnly.companies.length, 1);
   assert.equal(namedOnly.companies[0].name, 'CarboScan');
@@ -173,8 +175,9 @@ test('Statut d’importation et refus sans consentement', async () => {
   const status = await v('/documents/import-status');
   assert.equal(status.status, 200, JSON.stringify(status.data));
   assert.equal(status.data.configured, true);
-  assert.match(status.data.notice, /OpenAI/);
-  assert.doesNotMatch(status.data.notice, /Gemini|Google/);
+  assert.match(status.data.notice, /supprimée/);
+  assert.match(status.data.notice, /politique de confidentialité/);
+  assert.doesNotMatch(status.data.notice, /OpenAI|Gemini|Google|coch/i);
   assert.equal(status.data.maxPages, 5);
   assert.equal(status.data.quotas.dailyLimit, 20);
   assert.equal((await v('/documents/extract', {

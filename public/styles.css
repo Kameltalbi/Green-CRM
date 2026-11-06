@@ -15,7 +15,15 @@
   --blue-dark: #1F4A4F;
   --green: #408F86;         /* sauge */
   --sage-soft: #68ADA5;
-  --bg: #F4F7F6;
+  --bg: #F7F9F8;
+  --orange: #F2A541;
+  --contact: #3B82F6;
+  --company: #14B8A6;
+  --coral: #EF6461;
+  --contact-wash: #E7F0FE;
+  --company-wash: #E6F8F6;
+  --coral-wash: #FDECEC;
+  --orange-wash: #FEF4E4;
   --white: #FFFFFF;
   --field: #EDF2F0;
   --line: transparent;      /* aucune bordure décorative */
@@ -710,7 +718,7 @@ h1, h2, h3, p, small, label, strong, a, button, td, .tag, .tracking-badge { over
 .dashboard-overview .board-panel-heading h2, .dashboard-overview .panel-heading h2 { font-size: 1.125rem; }
 .dashboard-overview .board-panel-heading a { font-size: .875rem; gap: 6px; }
 .dashboard-overview .number-tag { border: 0; background: var(--bg); color: var(--text-secondary); margin-left: 6px; }
-.dashboard-overview .followup-late .number-tag { color: #9b361b; background: #fff2eb; }
+.dashboard-overview .followup-late .number-tag { color: var(--coral); background: var(--coral-wash); }
 .dashboard-overview .followup-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-height: 132px; padding: 16px 24px 26px; text-align: center; }
 .dashboard-overview .followup-empty > span { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: var(--bg); color: var(--text-secondary); }
 .dashboard-overview .followup-empty p { font-size: .875rem; }
@@ -849,3 +857,43 @@ h1, h2, h3, p, small, label, strong, a, button, td, .tag, .tracking-badge { over
   .workspace-chrome.navigation-collapsed .sidebar .brand-icon { display: block; }
   .workspace-chrome.navigation-collapsed .sidebar .brand-wordmark { display: none; }
 }
+
+/* Couleurs vives par écran : bleu contacts, turquoise entreprises, orange scan, corail retard. */
+.nav-item.nav-grid.selected { color: var(--green); background: var(--mint); box-shadow: inset 3px 0 var(--green); }
+.nav-item.nav-people.selected { color: var(--contact); background: var(--contact-wash); box-shadow: inset 3px 0 var(--contact); }
+.nav-item.nav-building.selected { color: var(--company); background: var(--company-wash); box-shadow: inset 3px 0 var(--company); }
+.nav-item.nav-clock.selected { color: var(--coral); background: var(--coral-wash); box-shadow: inset 3px 0 var(--coral); }
+.tone-contacts > h1, .directory-surface.tone-contacts .entity-tabs button[data-directory="contacts"].active { color: var(--contact); }
+.tone-companies > h1, .directory-surface.tone-companies .entity-tabs button[data-directory="companies"].active { color: var(--company); }
+.tone-relances > h1 { color: var(--coral); }
+.directory-surface.tone-contacts .entity-tabs button[data-directory="contacts"].active { background: var(--contact-wash); box-shadow: inset 0 -3px var(--contact); }
+.directory-surface.tone-companies .entity-tabs button[data-directory="companies"].active { background: var(--company-wash); box-shadow: inset 0 -3px var(--company); }
+.tone-contacts #page-add { background: var(--contact); color: var(--white); }
+.tone-companies #page-add { background: var(--company); color: var(--white); }
+.tone-relances #page-add { background: var(--orange); color: var(--text); }
+.tone-contacts #page-add:hover { background: #2563EB; }
+.tone-companies #page-add:hover { background: #0D9488; }
+.tone-relances #page-add:hover { background: #E09630; }
+.directory-surface.tone-contacts .avatar { background: var(--contact-wash); color: var(--contact); }
+.directory-surface.tone-companies .avatar, .directory-surface.tone-companies .company-avatar { background: var(--company-wash); color: var(--company); }
+.button.scan-button, .button.scan-button:hover { background: var(--orange); color: var(--text); }
+.board-metric.tone-people .metric-icon { background: var(--contact-wash); color: var(--contact); }
+.board-metric.tone-building .metric-icon { background: var(--company-wash); color: var(--company); }
+.board-metric.tone-clock .metric-icon { background: var(--company-wash); color: var(--company); }
+.board-metric.tone-bell .metric-icon { background: var(--coral-wash); color: var(--coral); }
+.dashboard-overview .followup-today, .agenda-day.tone-today { box-shadow: inset 4px 0 var(--company), 0 3px 18px #1f293708; }
+.dashboard-overview .followup-late, .agenda-day.tone-late { box-shadow: inset 4px 0 var(--coral), 0 3px 18px #1f293708; }
+.dashboard-overview .followup-upcoming, .agenda-day.tone-upcoming { box-shadow: inset 4px 0 var(--orange), 0 3px 18px #1f293708; }
+.reminder-overdue { box-shadow: inset 4px 0 var(--coral); }
+.followup-today .board-panel-heading a { color: var(--company); }
+.followup-late .board-panel-heading a { color: var(--coral); }
+.followup-upcoming .board-panel-heading a { color: #9A5B12; }
+.followup-today .number-tag { color: var(--company); background: var(--company-wash); }
+.followup-late .number-tag, .tracking-late { color: var(--coral); background: var(--coral-wash); }
+.followup-upcoming .number-tag { color: #9A5B12; background: var(--orange-wash); }
+.agenda-day.tone-today .number-tag { color: var(--company); background: var(--company-wash); }
+.agenda-day.tone-late .number-tag { color: var(--coral); background: var(--coral-wash); }
+.agenda-day.tone-upcoming .number-tag { color: #9A5B12; background: var(--orange-wash); }
+.dashboard-overview .followup-today .followup-empty > span { background: var(--company-wash); color: var(--company); }
+.dashboard-overview .followup-late .followup-empty > span { background: var(--coral-wash); color: var(--coral); }
+.dashboard-overview .followup-upcoming .followup-empty > span { background: var(--orange-wash); color: #9A5B12; }

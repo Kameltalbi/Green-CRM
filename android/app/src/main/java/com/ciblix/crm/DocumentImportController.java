@@ -22,15 +22,15 @@ import android.os.Looper;
 import android.provider.MediaStore;
 import android.text.InputType;
 import android.util.Base64;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
-import android.widget.CheckBox;
 import android.widget.EditText;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
@@ -50,13 +50,13 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 
-/** Photographier → prévisualiser → analyser → vérifier → enregistrer. La clé OCR reste sur le serveur. */
+/** Scanner ouvre l’appareil photo. La photo lance la lecture. Une seule confirmation : enregistrer. */
 final class DocumentImportController {
+    private static final String PROGRESS_LABEL = "Analyse en cours…";
     static final int REQ_CAMERA = 4101;
     static final int REQ_PICK = 4102;
     static final int REQ_CAMERA_PERM = 4103;
     private static final String STATE_PATH = "scanPath";
-    private static final long PENDING_MAX_AGE_MS = 15 * 60 * 1000L;
 
     private final Activity activity;
     private final ApiClient api;
@@ -67,16 +67,21 @@ final class DocumentImportController {
     private final List<JSONObject> pages = new ArrayList<>();
     private Uri cameraUri;
     private File cameraFile;
-    private Bitmap preview;
     private TextView statusView;
     private Dialog screen;
+    private Dialog progressDialog;
+    private ProgressBar progressBar;
+    private Runnable progressTick;
+    private int shownPercent;
     private Runnable pendingUi;
     private boolean resumed;
     private boolean flushing;
     private boolean extracting;
-    private String previewError = "";
+    private boolean analysisQueued;
+    private boolean awaitingResultUi;
     private int captureToken;
     private int consumedToken = -1;
+    private int analysisGeneration;
     private boolean keepPhotoOnDismiss;
     private static boolean purgedThisProcess;
 
@@ -91,7 +96,14 @@ final class DocumentImportController {
             @Override public void onActivityDestroyed(Activity host) {
                 if (host != activity) return;
                 host.getApplication().unregisterActivityLifecycleCallbacks(this);
-                if (host.isFinishing()) discardPhoto();
+                if (host.isFinishing()) {
+                    analysisGeneration++;
+                    extracting = false;
+                    analysisQueued = false;
+                    awaitingResultUi = false;
+                    dismissProgress();
+                    discardPhoto();
+                }
             }
             @Override public void onActivityCreated(Activity a, Bundle b) {}
             @Override public void onActivityStarted(Activity a) {}
@@ -105,11 +117,11 @@ final class DocumentImportController {
     void attachStatus(TextView status) { this.statusView = status; }
 
     void saveState(Bundle state) {
-        if (cameraFile != null) state.putString(STATE_PATH, cameraFile.getAbsolutePath());
+        if (cameraFile != null && !extracting) state.putString(STATE_PATH, cameraFile.getAbsolutePath());
     }
 
     void restoreState(Bundle state) {
-        if (state == null) return;
+        if (state == null || extracting || analysisQueued) return;
         String path = state.getString(STATE_PATH);
         if (path != null && !path.isEmpty()) cameraFile = new File(path);
     }
@@ -121,75 +133,24 @@ final class DocumentImportController {
 
     void onHostPause() { resumed = false; }
 
+    /** Une photo laissée par un ancien parcours est supprimée. Elle ne relance pas d’analyse. */
     void offerPendingCapture() {
-        if (!pages.isEmpty() || screen != null) return;
-        File file = rememberedFile();
-        if (!usableFile(file)) return;
-        if (System.currentTimeMillis() - file.lastModified() > PENDING_MAX_AGE_MS) {
-            clearMarker();
-            return;
-        }
-        try {
-            addImageFile(file);
-            showWhenReady(this::showPreview);
-        } catch (Exception e) {
-            report("Photo inutilisable", messageOf(e));
-        }
+        if (extracting || analysisQueued || awaitingResultUi || !pages.isEmpty() || screen != null) return;
+        deleteCaptureFiles();
     }
 
     void start(TextView status) {
-        if (extracting) return;
+        if (extracting || analysisQueued || awaitingResultUi) return;
         this.statusView = status;
         dismissKeepingPhoto();
+        dismissProgress();
         discardPhoto();
-        setStatus("Vérification du service OCR…");
-        worker.execute(() -> {
-            try {
-                JSONObject st = api.request("GET", "/api/v1/documents/import-status", null, 15000);
-                boolean ready = st.optBoolean("configured", false);
-                String notice = st.optString("notice", "");
-                activity.runOnUiThread(() -> {
-                    if (activity.isDestroyed()) return;
-                    if (!ready) {
-                        report("Scan indisponible", "Le serveur n’a pas de service d’analyse configuré. Aucune fiche n’a été créée.");
-                        return;
-                    }
-                    setStatus("");
-                    showWhenReady(() -> showCaptureSheet(notice));
-                });
-            } catch (Exception e) {
-                activity.runOnUiThread(() -> report("Scan impossible", e instanceof java.io.IOException
-                    ? "Serveur inaccessible. Vérifiez la connexion. Aucune fiche n’a été créée."
-                    : messageOf(e)));
-            }
-        });
-    }
-
-    private void showCaptureSheet(String notice) {
-        LinearLayout body = ui.column();
-        body.setPadding(dp(4), dp(8), dp(4), dp(4));
-        TextView info = ui.subtitle((notice == null || notice.isEmpty()
-            ? "Photographier, vérifier, puis enregistrer."
-            : notice)
-            + "\nJPG, PNG, WebP ou PDF · 5 pages · 8 Mo.");
-        body.addView(info);
-        AlertDialog dialog = new AlertDialog.Builder(activity)
-            .setTitle("Scanner une carte")
-            .setView(body)
-            .setNegativeButton("Annuler", null)
-            .create();
-        body.addView(ui.vivid("Appareil photo", UiKit.ORANGE, () -> {
-            dialog.dismiss();
-            openCamera();
-        }));
-        body.addView(ui.secondary("Galerie ou PDF", () -> {
-            dialog.dismiss();
-            openPicker();
-        }));
-        dialog.show();
+        setStatus("");
+        openCamera();
     }
 
     private void openCamera() {
+        if (extracting || analysisQueued) return;
         if (Build.VERSION.SDK_INT >= 23 && activity.checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             activity.requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_CAMERA_PERM);
             return;
@@ -203,7 +164,6 @@ final class DocumentImportController {
             remember(cameraFile);
             cameraUri = FileProvider.getUriForFile(activity, activity.getPackageName() + ".fileprovider", cameraFile);
             Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-            // Fichier du cache privé uniquement : aucune insertion MediaStore ni copie dans la galerie.
             intent.putExtra(MediaStore.EXTRA_OUTPUT, cameraUri);
             intent.setClipData(ClipData.newRawUri("scan", cameraUri));
             intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
@@ -222,12 +182,13 @@ final class DocumentImportController {
     }
 
     private void openPicker() {
+        if (extracting || analysisQueued) return;
         try {
             captureToken++;
             Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
             intent.addCategory(Intent.CATEGORY_OPENABLE);
-            intent.setType("*/*");
-            intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"image/jpeg", "image/png", "image/webp", "application/pdf"});
+            intent.setType("image/*");
+            intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"image/jpeg", "image/png", "image/webp"});
             intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
             activity.startActivityForResult(Intent.createChooser(intent, "Choisir une image"), REQ_PICK);
         } catch (android.content.ActivityNotFoundException e) {
@@ -236,17 +197,14 @@ final class DocumentImportController {
     }
 
     void onPermissionResult(int requestCode, int[] grantResults) {
-        if (requestCode != REQ_CAMERA_PERM) return;
+        if (requestCode != REQ_CAMERA_PERM || extracting || analysisQueued) return;
         if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) openCamera();
-        else report("Autorisation refusée", "L’appareil photo est refusé. Vous pouvez choisir une image dans la galerie. Aucune fiche n’a été créée.");
+        else report("Autorisation refusée", "L’appareil photo est nécessaire pour scanner une carte. Aucune fiche n’a été créée.");
     }
 
     void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (requestCode != REQ_CAMERA && requestCode != REQ_PICK) return;
-        if (requestCode == REQ_CAMERA && captureToken == 0 && !pages.isEmpty()) {
-            showWhenReady(this::showPreview);
-            return;
-        }
+        if (extracting || analysisQueued) return;
         if (consumedToken == captureToken && captureToken != 0) return;
         consumedToken = captureToken;
         try {
@@ -257,17 +215,11 @@ final class DocumentImportController {
                     addUri(data.getData());
                 } else if (wrote) {
                     addImageFile(file);
-                    deleteCurrentCameraFile();
                 } else if (data != null && data.getExtras() != null && data.getExtras().get("data") instanceof Bitmap thumb) {
                     addBitmap(thumb, "image/jpeg");
-                    setStatus("Photo reçue en basse résolution.");
                 } else if (resultCode != Activity.RESULT_OK) {
                     deleteCurrentCameraFile();
-                    if (pages.isEmpty()) {
-                        report("Prise de vue annulée", "Aucune photo n’a été conservée. Reprenez la photo ou choisissez une image dans la galerie.");
-                    } else {
-                        showPreview();
-                    }
+                    report("Prise de vue annulée", "Aucune photo n’a été conservée.");
                     return;
                 } else {
                     deleteCurrentCameraFile();
@@ -289,152 +241,238 @@ final class DocumentImportController {
                     return;
                 }
             }
-            if (pages.isEmpty()) {
-                report("Document illisible", "Aucun document exploitable. Reprenez la photo ou choisissez un autre fichier.");
-                return;
-            }
             if (cameraUri != null) {
                 activity.revokeUriPermission(cameraUri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
             }
-            showWhenReady(this::showPreview);
+            scheduleAnalysis();
         } catch (Exception e) {
             deleteCurrentCameraFile();
+            wipeImage();
             report("Photo inutilisable", messageOf(e));
         }
     }
 
-    private void showPreview() {
-        LinearLayout body = ui.column();
-        TextView help = ui.subtitle(pages.size() + " page(s) prête(s). Vérifiez la photo, puis lancez l’analyse. Rien n’est enregistré à cette étape.");
-        help.setPadding(0, dp(8), 0, dp(8));
-        body.addView(help);
-        if (preview != null && !preview.isRecycled()) {
-            ImageView image = new ImageView(activity);
-            image.setImageBitmap(preview);
-            image.setAdjustViewBounds(true);
-            image.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            image.setContentDescription("Prévisualisation de la carte de visite");
-            image.setBackgroundColor(UiKit.FIELD);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(240));
-            lp.bottomMargin = dp(8);
-            image.setLayoutParams(lp);
-            body.addView(image);
-        } else {
-            body.addView(ui.subtitle("Document prêt pour l’analyse (aperçu image indisponible)."));
+    private void scheduleAnalysis() {
+        if (extracting || analysisQueued) return;
+        if (pages.isEmpty()) {
+            deleteCaptureFiles();
+            showFailure("Aucun document exploitable. Reprenez la photo ou saisissez les informations. Aucune fiche n’a été créée.");
+            return;
         }
-        CheckBox consent = new CheckBox(activity);
-        consent.setChecked(false);
-        consent.setText("Pour analyser cette carte de visite, Ciblix transmettra sa photographie à OpenAI afin d’en extraire les coordonnées professionnelles. Vérifiez les informations avant leur enregistrement.");
-        consent.setTextColor(UiKit.PETROLEUM);
-        body.addView(consent);
-        LinearLayout footer = ui.column();
-        TextView error = new TextView(activity);
-        error.setTextColor(UiKit.DANGER);
-        error.setTextSize(14);
-        error.setText(previewError == null ? "" : previewError);
-        error.setVisibility(blank(previewError) ? View.GONE : View.VISIBLE);
-        footer.addView(error);
-        Button analyze = ui.vivid(blank(previewError) ? "Analyser la carte" : "Réessayer l’analyse", UiKit.ORANGE, () -> {
-            if (!consent.isChecked()) {
-                error.setVisibility(View.VISIBLE);
-                error.setText("Cochez l’accord pour lancer l’analyse. La photo n’est pas envoyée.");
-                return;
-            }
-            extract();
-        });
-        footer.addView(analyze);
-        footer.addView(ui.secondary("Saisir manuellement", () -> {
-            try { showReview(new JSONObject()); }
-            catch (Exception e) { report("Saisie impossible", messageOf(e)); }
-        }));
-        footer.addView(ui.secondary("Reprendre la photo", () -> {
-            pages.clear();
-            recyclePreview();
-            dismissKeepingPhoto();
-            deleteCurrentCameraFile();
-            openCamera();
-        }));
-        footer.addView(ui.secondary("Choisir dans la galerie", () -> {
-            pages.clear();
-            recyclePreview();
-            dismissKeepingPhoto();
-            deleteCurrentCameraFile();
-            openPicker();
-        }));
-        if (pages.size() < 5 && (pages.isEmpty() || !"application/pdf".equals(pages.get(0).optString("mime_type")))) {
-            footer.addView(ui.secondary("Ajouter une page", () -> {
-                dismissKeepingPhoto();
-                openCamera();
-            }));
-        }
-        footer.addView(ui.ghost("Annuler", () -> {
-            dismissScreen();
-            setStatus("Analyse annulée. La photo a été supprimée. Aucune fiche n’a été créée.");
-        }));
-        openScreen("Vérifier la photo", body, footer);
-        setStatus("Photo prête. Lancez l’analyse ou reprenez-la.");
+        analysisQueued = true;
+        deleteCaptureFiles();
+        showWhenReady(this::beginAnalysis);
     }
 
-    private void extract() {
+    private void beginAnalysis() {
         if (extracting) return;
         if (pages.isEmpty()) {
-            previewError = "La photo n’est plus en mémoire. Reprenez-la ou choisissez-la dans la galerie. Aucune fiche n’a été créée.";
-            showPreview();
+            analysisQueued = false;
+            showFailure("La photo n’est plus disponible. Reprenez-la ou saisissez les informations. Aucune fiche n’a été créée.");
             return;
         }
         extracting = true;
-        previewError = "";
-        setStatus("Analyse en cours…");
-        AlertDialog progress = new AlertDialog.Builder(activity)
-            .setTitle("Analyse OpenAI")
-            .setMessage("Lecture de la carte par OpenAI. La photo n’est pas enregistrée. Elle reste disponible seulement si l’analyse échoue.")
-            .setCancelable(false)
-            .create();
-        try {
-            progress.show();
-        } catch (Exception e) {
-            extracting = false;
-            previewError = "Impossible d’afficher la progression. Réessayez. La photo est conservée.";
-            showPreview();
-            return;
-        }
-        List<JSONObject> snapshot = new ArrayList<>(pages);
-        dismissKeepingPhoto();
+        analysisQueued = false;
+        final int generation = ++analysisGeneration;
+        final List<JSONObject> snapshot = new ArrayList<>(pages);
+        deleteCaptureFiles();
+        showProgress(generation);
         worker.execute(() -> {
+            JSONObject body = null;
             try {
-                JSONObject body = new JSONObject().put("external_processing_consent", true);
-                if (snapshot.size() == 1) {
-                    body.put("mime_type", snapshot.get(0).getString("mime_type"));
-                    body.put("data", snapshot.get(0).getString("data"));
-                } else {
-                    JSONArray list = new JSONArray();
-                    for (JSONObject page : snapshot) list.put(page);
-                    body.put("pages", list);
-                }
-                JSONObject result = api.request("POST", "/api/v1/documents/extract", body, 90000);
-                activity.runOnUiThread(() -> {
-                    extracting = false;
-                    discardPhoto();
-                    if (activity.isDestroyed()) return;
-                    try { progress.dismiss(); } catch (Exception ignored) {}
-                    setStatus("Analyse terminée. La photo a été supprimée.");
-                    try { showReview(result); }
-                    catch (Exception e) { report("Résultat illisible", messageOf(e)); }
+                body = requestBody(snapshot);
+                final int[] sentPercent = {-1};
+                JSONObject result = api.request("POST", "/api/v1/documents/extract", body, 90000, (sent, total) -> {
+                    if (total <= 0) return;
+                    int mapped = 12 + (int) (sent * 33L / total);
+                    if (mapped == sentPercent[0]) return;
+                    sentPercent[0] = mapped;
+                    activity.runOnUiThread(() -> {
+                        if (generation != analysisGeneration) return;
+                        publishPercent(mapped);
+                    });
                 });
+                JSONObject delivered = result;
+                activity.runOnUiThread(() -> deliver(generation, delivered, null));
             } catch (Exception e) {
-                activity.runOnUiThread(() -> {
-                    extracting = false;
-                    if (activity.isDestroyed()) return;
-                    try { progress.dismiss(); } catch (Exception ignored) {}
-                    String message = e instanceof java.io.IOException
-                        ? "Serveur inaccessible. Vérifiez la connexion, puis réessayez. La photo est conservée. Aucune fiche n’a été créée."
-                        : messageOf(e);
-                    previewError = message;
-                    showPreview();
-                    report("Analyse impossible", message);
-                });
+                activity.runOnUiThread(() -> deliver(generation, null, e));
+            } finally {
+                scrub(body);
+                activity.runOnUiThread(this::deleteCaptureFiles);
             }
         });
+    }
+
+    private void deliver(int generation, JSONObject result, Exception error) {
+        if (generation != analysisGeneration) return;
+        if (activity.isDestroyed()) {
+            extracting = false;
+            dismissProgress();
+            wipeImage();
+            return;
+        }
+        if (error == null && progressBar != null) {
+            publishPercent(100);
+            main.postDelayed(() -> finishDelivery(generation, result, null), 320);
+            return;
+        }
+        finishDelivery(generation, result, error);
+    }
+
+    private void finishDelivery(int generation, JSONObject result, Exception error) {
+        if (generation != analysisGeneration) return;
+        extracting = false;
+        dismissProgress();
+        if (activity.isDestroyed()) {
+            wipeImage();
+            return;
+        }
+        awaitingResultUi = true;
+        showWhenReady(() -> present(generation, result, error));
+    }
+
+    private void present(int generation, JSONObject result, Exception error) {
+        if (generation != analysisGeneration) return;
+        awaitingResultUi = false;
+        if (activity.isDestroyed()) {
+            wipeImage();
+            return;
+        }
+        if (error != null) {
+            String message = error instanceof java.io.IOException
+                ? "Serveur inaccessible. Vérifiez la connexion, puis réessayez. Aucune fiche n’a été créée."
+                : messageOf(error);
+            showFailure(message);
+            return;
+        }
+        wipeImage();
+        setStatus("");
+        try { showReview(result == null ? new JSONObject() : result); }
+        catch (Exception e) { report("Résultat illisible", messageOf(e)); }
+    }
+
+    private JSONObject requestBody(List<JSONObject> snapshot) throws Exception {
+        JSONObject body = new JSONObject().put("external_processing_consent", true);
+        if (snapshot.size() == 1) {
+            body.put("mime_type", snapshot.get(0).getString("mime_type"));
+            body.put("data", snapshot.get(0).getString("data"));
+        } else {
+            JSONArray list = new JSONArray();
+            for (JSONObject page : snapshot) {
+                list.put(new JSONObject()
+                    .put("mime_type", page.getString("mime_type"))
+                    .put("data", page.getString("data")));
+            }
+            body.put("pages", list);
+        }
+        return body;
+    }
+
+    private static void scrub(JSONObject body) {
+        if (body == null) return;
+        body.remove("data");
+        JSONArray sent = body.optJSONArray("pages");
+        if (sent == null) return;
+        for (int i = 0; i < sent.length(); i++) {
+            JSONObject page = sent.optJSONObject(i);
+            if (page != null) page.remove("data");
+        }
+    }
+
+    private void showProgress(int generation) {
+        dismissProgress();
+        shownPercent = 0;
+        LinearLayout box = new LinearLayout(activity);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(18), dp(20), dp(8));
+        TextView label = new TextView(activity);
+        label.setText(PROGRESS_LABEL);
+        label.setTextColor(UiKit.PETROLEUM);
+        label.setTextSize(16);
+        label.setGravity(Gravity.CENTER);
+        label.setContentDescription(PROGRESS_LABEL);
+        box.addView(label);
+        ProgressBar bar = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
+        bar.setMax(100);
+        bar.setProgress(0);
+        bar.setIndeterminate(false);
+        LinearLayout.LayoutParams barParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(4));
+        barParams.topMargin = dp(14);
+        box.addView(bar, barParams);
+        progressBar = bar;
+        AlertDialog dialog = new AlertDialog.Builder(activity)
+            .setView(box)
+            .setCancelable(false)
+            .create();
+        progressDialog = dialog;
+        try {
+            dialog.show();
+            setStatus("");
+        } catch (Exception e) {
+            progressDialog = null;
+            progressBar = null;
+            setStatus(PROGRESS_LABEL);
+        }
+        startProgressLoop(generation);
+    }
+
+    private void startProgressLoop(int generation) {
+        stopProgressLoop();
+        progressTick = new Runnable() {
+            @Override public void run() {
+                if (generation != analysisGeneration || shownPercent >= 92) return;
+                publishPercent(Math.min(92, shownPercent + 1));
+                if (shownPercent < 92 && generation == analysisGeneration) main.postDelayed(this, 180);
+            }
+        };
+        main.post(progressTick);
+    }
+
+    private void stopProgressLoop() {
+        if (progressTick != null) main.removeCallbacks(progressTick);
+        progressTick = null;
+    }
+
+    private void publishPercent(int value) {
+        int next = Math.max(shownPercent, Math.max(0, Math.min(100, value)));
+        if (next == shownPercent && (progressBar != null || next == 0)) return;
+        shownPercent = next;
+        if (progressBar != null) progressBar.setProgress(shownPercent);
+        else if (progressDialog == null) setStatus(PROGRESS_LABEL);
+    }
+
+    private void showFailure(String message) {
+        LinearLayout body = ui.column();
+        TextView help = ui.subtitle(blank(message) ? "L’analyse a échoué. Aucune fiche n’a été créée." : message);
+        help.setPadding(0, dp(12), 0, dp(8));
+        body.addView(help);
+        LinearLayout footer = ui.column();
+        footer.addView(ui.vivid("Réessayer", UiKit.ORANGE, () -> {
+            if (extracting || analysisQueued) return;
+            analysisQueued = true;
+            keepPhotoOnDismiss = true;
+            dismissScreen();
+            keepPhotoOnDismiss = false;
+            beginAnalysis();
+        }));
+        footer.addView(ui.secondary("Reprendre la photo", () -> {
+            if (extracting || analysisQueued) return;
+            analysisGeneration++;
+            wipeImage();
+            dismissKeepingPhoto();
+            openCamera();
+        }));
+        footer.addView(ui.secondary("Saisir manuellement", () -> {
+            if (extracting || analysisQueued) return;
+            analysisGeneration++;
+            wipeImage();
+            dismissKeepingPhoto();
+            try { showReview(new JSONObject()); }
+            catch (Exception e) { report("Saisie impossible", messageOf(e)); }
+        }));
+        deleteCaptureFiles();
+        openScreen("Analyse impossible", body, footer);
+        setStatus("");
     }
 
     private void showReview(JSONObject extracted) throws Exception {
@@ -443,60 +481,82 @@ final class DocumentImportController {
         if (companies == null) companies = new JSONArray();
         if (contacts == null) contacts = new JSONArray();
         boolean empty = companies.length() == 0 && contacts.length() == 0;
-        if (empty) {
-            companies.put(new JSONObject());
-            contacts.put(new JSONObject());
-        }
         companies = namedCompanies(companies, contacts);
+        JSONObject contact = contacts.length() == 0 ? new JSONObject() : contacts.getJSONObject(0);
+        String[] parts = splitName(contact.optString("name", ""));
+        String companyName = contact.optString("company_name", "").trim();
+        JSONObject company = new JSONObject();
+        for (int i = 0; i < companies.length(); i++) {
+            JSONObject item = companies.getJSONObject(i);
+            String name = item.optString("name", "").trim();
+            if (companyName.isEmpty()) companyName = name;
+            if (!name.isEmpty() && name.equalsIgnoreCase(companyName)) {
+                company = item;
+                break;
+            }
+        }
+        String address = company.optString("address", "");
+        String website = company.optString("website", "");
         JSONObject matches = extracted.optJSONObject("matches");
         if (matches == null) matches = new JSONObject();
+        JSONArray companyMatches = matchItems(matches.optJSONArray("companies"), company.optString("name", companyName));
+        JSONArray contactMatches = matchItems(matches.optJSONArray("contacts"), contact.optString("name", ""));
+        Set<String> contactUnsure = unsure(contact);
+        Set<String> companyUnsure = unsure(company);
+        String phone = firstFilled(contact, "phone", "phone_work", "whatsapp");
+        boolean phoneUnsure = contactUnsure.contains("phone") || (phone.equals(contact.optString("phone_work")) && contactUnsure.contains("phone_work"));
 
         LinearLayout body = ui.column();
-        if (preview != null && !preview.isRecycled()) {
-            ImageView image = new ImageView(activity);
-            image.setImageBitmap(preview);
-            image.setAdjustViewBounds(true);
-            image.setContentDescription("Carte analysée");
-            image.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(160)));
-            body.addView(image);
-        }
         TextView help = ui.subtitle(empty
-            ? "Aucune information fiable n’a été lue. Complétez au moins le nom, ou reprenez la photo. Rien n’est enregistré tant que vous ne validez pas."
-            : "Corrigez les champs. Ceux marqués « à vérifier » sont incertains. Les champs vides n’ont pas été inventés.");
+            ? "Aucune information fiable n’a été lue. Complétez les champs, puis enregistrez. Rien n’est conservé avant cette confirmation."
+            : "Corrigez les informations si besoin. Elles ne sont enregistrées qu’au moment où vous confirmez.");
         help.setPadding(0, dp(8), 0, dp(8));
         body.addView(help);
 
-        List<Row> companyRows = new ArrayList<>();
-        List<Row> contactRows = new ArrayList<>();
-        body.addView(ui.caption("Entreprise"));
-        for (int i = 0; i < companies.length(); i++) {
-            JSONObject src = companies.getJSONObject(i);
-            companyRows.add(addCompanyRow(body, src, matchItems(matches.optJSONArray("companies"), src.optString("name")), empty));
+        EditText last = field(body, "Nom", parts[1], InputType.TYPE_CLASS_TEXT, contactUnsure.contains("name"));
+        EditText first = field(body, "Prénom", parts[0], InputType.TYPE_CLASS_TEXT, contactUnsure.contains("name"));
+        EditText companyField = field(body, "Entreprise", companyName, InputType.TYPE_CLASS_TEXT, contactUnsure.contains("company_name") || companyUnsure.contains("name"));
+        EditText job = field(body, "Fonction", contact.optString("job_title", ""), InputType.TYPE_CLASS_TEXT, contactUnsure.contains("job_title"));
+        EditText phoneField = field(body, "Téléphone", phone, InputType.TYPE_CLASS_PHONE, phoneUnsure);
+        EditText email = field(body, "E-mail", joinEmails(contact.optJSONArray("emails")), InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS, contactUnsure.contains("emails"));
+        EditText addressField = field(body, "Adresse", address, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE, companyUnsure.contains("address"));
+        EditText websiteField = field(body, "Site web", website, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI, companyUnsure.contains("website"));
+
+        List<Choice> companyChoices = new ArrayList<>();
+        Spinner companyAction = null;
+        if (companyMatches.length() > 0) {
+            TextView hint = ui.subtitle("Une entreprise de ce nom existe déjà. Associez-la ou complétez-la pour éviter un doublon.");
+            hint.setTextColor(UiKit.WARN);
+            body.addView(hint);
+            companyAction = choiceSpinner(body, companyMatches, companyChoices, true, true);
         }
-        body.addView(ui.caption("Contact"));
-        for (int i = 0; i < contacts.length(); i++) {
-            JSONObject src = contacts.getJSONObject(i);
-            contactRows.add(addContactRow(body, src, matchItems(matches.optJSONArray("contacts"), src.optString("name"))));
+        List<Choice> contactChoices = new ArrayList<>();
+        Spinner contactAction = null;
+        if (contactMatches.length() > 0) {
+            TextView hint = ui.subtitle("Un contact correspondant existe déjà. Complétez-le pour éviter un doublon.");
+            hint.setTextColor(UiKit.WARN);
+            body.addView(hint);
+            contactAction = choiceSpinner(body, contactMatches, contactChoices, false, true);
         }
+
         TextView error = new TextView(activity);
         error.setTextColor(UiKit.DANGER);
         error.setTextSize(14);
         LinearLayout footer = ui.column();
         footer.addView(error);
-        Button save = ui.vivid("Enregistrer", UiKit.SAGE, null);
+        Button save = ui.vivid("Enregistrer le contact", UiKit.PETROLEUM, null);
         footer.addView(save);
-        footer.addView(ui.secondary("Reprendre la photo", () -> {
-            dismissKeepingPhoto();
-            openCamera();
-        }));
         footer.addView(ui.ghost("Abandonner", () -> {
             dismissScreen();
             setStatus("Saisie abandonnée. Aucune fiche n’a été créée.");
         }));
-        Dialog dialog = openScreen("Vérifier avant d’enregistrer", body, footer);
+        Dialog dialog = openScreen("Contact", body, footer);
+        Spinner companySpinner = companyAction;
+        Spinner contactSpinner = contactAction;
         save.setOnClickListener(v -> {
+            if (!save.isEnabled()) return;
             try {
-                JSONObject payload = buildPayload(companyRows, contactRows);
+                JSONObject payload = buildPayload(first, last, companyField, job, phoneField, email, addressField, websiteField, companySpinner, companyChoices, contactSpinner, contactChoices);
                 save.setEnabled(false);
                 error.setText("Enregistrement…");
                 error.setTextColor(UiKit.PETROLEUM);
@@ -520,10 +580,53 @@ final class DocumentImportController {
                     }
                 });
             } catch (Exception e) {
+                save.setEnabled(true);
                 error.setTextColor(UiKit.DANGER);
                 error.setText(messageOf(e));
             }
         });
+    }
+
+    private JSONObject buildPayload(EditText firstField, EditText lastField, EditText companyField, EditText jobField, EditText phoneField, EditText emailField, EditText addressField, EditText websiteField, Spinner companySpinner, List<Choice> companyChoices, Spinner contactSpinner, List<Choice> contactChoices) throws Exception {
+        String person = (text(firstField) + " " + text(lastField)).trim().replaceAll("\\s+", " ");
+        if (person.isEmpty()) throw new Exception("Indiquez le prénom ou le nom du contact.");
+        String companyName = text(companyField);
+        String address = text(addressField);
+        String website = text(websiteField);
+        if (companyName.isEmpty() && (!address.isEmpty() || !website.isEmpty())) throw new Exception("Indiquez l’entreprise pour enregistrer l’adresse ou le site web.");
+        JSONArray companyOut = new JSONArray();
+        String linkedCompanyId = "";
+        if (!companyName.isEmpty()) {
+            Choice choice = selected(companySpinner, companyChoices);
+            JSONObject item = new JSONObject().put("selected", true).put("name", companyName);
+            if ("link".equals(choice.action)) {
+                if (choice.id.isEmpty()) throw new Exception("Choisissez l’entreprise à associer.");
+                linkedCompanyId = choice.id;
+                item.put("action", "link").put("id", choice.id);
+            } else {
+                item.put("action", "update".equals(choice.action) ? "update" : "create").put("address", address).put("website", website);
+                if (!choice.id.isEmpty()) item.put("id", choice.id);
+            }
+            companyOut.put(item);
+        }
+        Choice contactChoice = selected(contactSpinner, contactChoices);
+        JSONArray emails = new JSONArray();
+        for (String part : emailField.getText().toString().split("[\\n;,]")) {
+            String value = part.trim();
+            if (!value.isEmpty()) emails.put(value);
+        }
+        JSONObject contact = new JSONObject()
+            .put("selected", true)
+            .put("action", "update".equals(contactChoice.action) ? "update" : "create")
+            .put("name", person)
+            .put("job_title", text(jobField))
+            .put("phone", text(phoneField))
+            .put("emails", emails)
+            .put("company_name", companyName)
+            .put("source", "Carte de visite");
+        if (!contactChoice.id.isEmpty()) contact.put("id", contactChoice.id);
+        if (!linkedCompanyId.isEmpty()) contact.put("company_id", linkedCompanyId);
+        return new JSONObject().put("companies", companyOut).put("contacts", new JSONArray().put(contact));
     }
 
     private String summary(JSONObject result) {
@@ -576,91 +679,15 @@ final class DocumentImportController {
         Choice(String id, String action) { this.id = id; this.action = action; }
     }
 
-    private static final class Row {
-        final CheckBox select;
-        final EditText[] fields;
-        final Spinner action;
-        final List<Choice> choices;
-        Row(CheckBox select, EditText[] fields, Spinner action, List<Choice> choices) {
-            this.select = select;
-            this.fields = fields;
-            this.action = action;
-            this.choices = choices;
-        }
-        Choice choice() {
-            int idx = action.getSelectedItemPosition();
-            if (idx < 0 || idx >= choices.size()) return new Choice("", "create");
-            return choices.get(idx);
-        }
+    private static Choice selected(Spinner spinner, List<Choice> choices) {
+        if (spinner == null || choices == null || choices.isEmpty()) return new Choice("", "create");
+        int idx = spinner.getSelectedItemPosition();
+        if (idx < 0 || idx >= choices.size()) return new Choice("", "create");
+        return choices.get(idx);
     }
 
-    private Row addCompanyRow(LinearLayout body, JSONObject src, JSONArray matches, boolean empty) throws Exception {
-        CheckBox select = new CheckBox(activity);
-        boolean named = !src.optString("name").trim().isEmpty();
-        select.setText(named ? "Enregistrer cette entreprise" : "Créer une entreprise");
-        select.setChecked(named);
-        select.setTextColor(UiKit.PETROLEUM);
-        body.addView(select);
-        if (matches != null && matches.length() > 0) {
-            TextView hint = ui.subtitle("Une entreprise de ce nom existe déjà. Associez-la pour éviter un doublon.");
-            hint.setTextColor(UiKit.WARN);
-            body.addView(hint);
-        }
-        Set<String> unsure = unsure(src);
-        String[] keys = {"name", "sector", "city", "address", "phone", "email", "website", "country", "linkedin", "description"};
-        String[] labels = {"Nom", "Secteur", "Ville", "Adresse postale", "Téléphone", "E-mail", "Site web", "Pays", "LinkedIn", "À propos"};
-        int[] types = {
-            InputType.TYPE_CLASS_TEXT,
-            InputType.TYPE_CLASS_TEXT,
-            InputType.TYPE_CLASS_TEXT,
-            InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE,
-            InputType.TYPE_CLASS_PHONE,
-            InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
-            InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI,
-            InputType.TYPE_CLASS_TEXT,
-            InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI,
-            InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
-        };
-        EditText[] fields = new EditText[keys.length];
-        for (int i = 0; i < keys.length; i++) {
-            fields[i] = field(body, labels[i], src.optString(keys[i], ""), types[i], unsure.contains(keys[i]));
-        }
-        List<Choice> choices = new ArrayList<>();
-        Spinner action = choiceSpinner(body, matches, choices, true);
-        if (empty) select.setChecked(false);
-        return new Row(select, fields, action, choices);
-    }
-
-    private Row addContactRow(LinearLayout body, JSONObject src, JSONArray matches) throws Exception {
-        CheckBox select = new CheckBox(activity);
-        select.setText("Enregistrer ce contact");
-        select.setChecked(true);
-        select.setTextColor(UiKit.PETROLEUM);
-        body.addView(select);
-        if (matches != null && matches.length() > 0) {
-            TextView hint = ui.subtitle("Un contact correspondant existe déjà. Complétez-le pour éviter un doublon.");
-            hint.setTextColor(UiKit.WARN);
-            body.addView(hint);
-        }
-        String[] parts = splitName(src.optString("name", ""));
-        String emails = joinEmails(src.optJSONArray("emails"));
-        Set<String> unsure = unsure(src);
-        EditText first = field(body, "Prénom", parts[0], InputType.TYPE_CLASS_TEXT, unsure.contains("name"));
-        EditText last = field(body, "Nom", parts[1], InputType.TYPE_CLASS_TEXT, unsure.contains("name"));
-        EditText job = field(body, "Fonction", src.optString("job_title", ""), InputType.TYPE_CLASS_TEXT, unsure.contains("job_title"));
-        EditText department = field(body, "Service", src.optString("department", ""), InputType.TYPE_CLASS_TEXT, unsure.contains("department"));
-        EditText phone = field(body, "Téléphone mobile", src.optString("phone", ""), InputType.TYPE_CLASS_PHONE, unsure.contains("phone"));
-        EditText phoneWork = field(body, "Téléphone professionnel", src.optString("phone_work", ""), InputType.TYPE_CLASS_PHONE, unsure.contains("phone_work"));
-        EditText whatsapp = field(body, "WhatsApp", src.optString("whatsapp", ""), InputType.TYPE_CLASS_PHONE, unsure.contains("whatsapp"));
-        EditText email = field(body, "E-mails", emails, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE, unsure.contains("emails"));
-        EditText companyName = field(body, "Entreprise", src.optString("company_name", ""), InputType.TYPE_CLASS_TEXT, unsure.contains("company_name"));
-        List<Choice> choices = new ArrayList<>();
-        Spinner action = choiceSpinner(body, matches, choices, false);
-        return new Row(select, new EditText[]{first, last, job, department, phone, phoneWork, whatsapp, email, companyName}, action, choices);
-    }
-
-    private Spinner choiceSpinner(LinearLayout body, JSONArray matches, List<Choice> choices, boolean company) throws Exception {
-        TextView label = ui.subtitle(company ? "Si l’entreprise existe déjà" : "Si le contact existe déjà");
+    private Spinner choiceSpinner(LinearLayout body, JSONArray matches, List<Choice> choices, boolean company, boolean preferUpdate) throws Exception {
+        TextView label = ui.subtitle(company ? "Entreprise déjà présente" : "Contact déjà présent");
         label.setPadding(0, dp(8), 0, dp(4));
         body.addView(label);
         List<String> labels = new ArrayList<>();
@@ -677,11 +704,11 @@ final class DocumentImportController {
                     choices.add(new Choice(id, "link"));
                     labels.add("Compléter « " + name + " »");
                     choices.add(new Choice(id, "update"));
-                    if (i == 0) select = 1;
+                    if (i == 0) select = preferUpdate ? choices.size() - 1 : choices.size() - 2;
                 } else {
                     labels.add("Compléter « " + name + " »");
                     choices.add(new Choice(id, "update"));
-                    if (i == 0) select = 1;
+                    if (i == 0) select = preferUpdate ? choices.size() - 1 : 0;
                 }
             }
         }
@@ -709,75 +736,6 @@ final class DocumentImportController {
         if ((type & InputType.TYPE_TEXT_FLAG_MULTI_LINE) == 0) input.setSingleLine(true);
         parent.addView(input);
         return input;
-    }
-
-    private JSONObject buildPayload(List<Row> companies, List<Row> contacts) throws Exception {
-        JSONArray companyOut = new JSONArray();
-        JSONArray contactOut = new JSONArray();
-        List<String[]> links = new ArrayList<>();
-        for (Row row : companies) {
-            if (!row.select.isChecked()) continue;
-            String name = row.fields[0].getText().toString().trim();
-            Choice choice = row.choice();
-            if ("link".equals(choice.action)) {
-                if (choice.id.isEmpty()) throw new Exception("Choisissez l’entreprise à associer.");
-                links.add(new String[]{name.toLowerCase(), choice.id, name});
-                continue;
-            }
-            if (name.isEmpty()) throw new Exception("Le nom de l’entreprise est obligatoire pour la créer.");
-            JSONObject item = new JSONObject()
-                .put("selected", true)
-                .put("action", "update".equals(choice.action) ? "update" : "create")
-                .put("name", name)
-                .put("sector", text(row.fields[1]))
-                .put("city", text(row.fields[2]))
-                .put("address", text(row.fields[3]))
-                .put("phone", text(row.fields[4]))
-                .put("email", text(row.fields[5]))
-                .put("website", text(row.fields[6]))
-                .put("country", text(row.fields[7]))
-                .put("linkedin", text(row.fields[8]))
-                .put("description", text(row.fields[9]));
-            if (!choice.id.isEmpty()) item.put("id", choice.id);
-            companyOut.put(item);
-        }
-        for (Row row : contacts) {
-            if (!row.select.isChecked()) continue;
-            String name = (text(row.fields[0]) + " " + text(row.fields[1])).trim().replaceAll("\\s+", " ");
-            if (name.isEmpty()) throw new Exception("Indiquez le prénom ou le nom du contact.");
-            Choice choice = row.choice();
-            JSONArray emails = new JSONArray();
-            for (String part : row.fields[7].getText().toString().split("[\\n;,]")) {
-                String email = part.trim();
-                if (!email.isEmpty()) emails.put(email);
-            }
-            String companyName = text(row.fields[8]);
-            JSONObject item = new JSONObject()
-                .put("selected", true)
-                .put("action", "update".equals(choice.action) ? "update" : "create")
-                .put("name", name)
-                .put("job_title", text(row.fields[2]))
-                .put("department", text(row.fields[3]))
-                .put("phone", text(row.fields[4]))
-                .put("phone_work", text(row.fields[5]))
-                .put("whatsapp", text(row.fields[6]))
-                .put("emails", emails)
-                .put("company_name", companyName)
-                .put("source", "Carte de visite");
-            if (!choice.id.isEmpty()) item.put("id", choice.id);
-            for (String[] link : links) {
-                if (companyName.isEmpty() || companyName.equalsIgnoreCase(link[2])) {
-                    item.put("company_id", link[1]);
-                    if (companyName.isEmpty()) item.put("company_name", link[2]);
-                    break;
-                }
-            }
-            contactOut.put(item);
-        }
-        if (companyOut.length() == 0 && contactOut.length() == 0) {
-            throw new Exception("Sélectionnez au moins un contact ou une entreprise à enregistrer.");
-        }
-        return new JSONObject().put("companies", companyOut).put("contacts", contactOut);
     }
 
     private void addUri(Uri uri) throws Exception {
@@ -808,7 +766,7 @@ final class DocumentImportController {
             }
         }
         try { addImageFile(temp); }
-        finally { temp.delete(); }
+        finally { if (!temp.delete() && temp.exists()) temp.deleteOnExit(); }
     }
 
     private void addImageFile(File file) throws Exception {
@@ -817,7 +775,8 @@ final class DocumentImportController {
         }
         Bitmap bitmap = decodeOriented(file);
         if (bitmap == null) throw new Exception("Image illisible. Reprenez la photo ou choisissez un autre fichier.");
-        addBitmap(bitmap, "image/jpeg");
+        try { addBitmap(bitmap, "image/jpeg"); }
+        finally { if (!bitmap.isRecycled()) bitmap.recycle(); }
     }
 
     private Bitmap decodeOriented(File file) {
@@ -857,19 +816,20 @@ final class DocumentImportController {
             throw new Exception("Un PDF est déjà sélectionné.");
         }
         Bitmap scaled = scale(bitmap, 3072);
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        if (!scaled.compress(Bitmap.CompressFormat.JPEG, 90, out)) throw new Exception("Compression de la photo impossible.");
-        byte[] bytes = out.toByteArray();
-        if (bytes.length < 32 || bytes[0] != (byte) 0xFF || bytes[1] != (byte) 0xD8) {
-            throw new Exception("La photo compressée est illisible.");
+        try {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            if (!scaled.compress(Bitmap.CompressFormat.JPEG, 90, out)) throw new Exception("Compression de la photo impossible.");
+            byte[] bytes = out.toByteArray();
+            if (bytes.length < 32 || bytes[0] != (byte) 0xFF || bytes[1] != (byte) 0xD8) {
+                throw new Exception("La photo compressée est illisible.");
+            }
+            long total = bytes.length;
+            for (JSONObject page : pages) total += Base64.decode(page.getString("data"), Base64.DEFAULT).length;
+            if (total > 8_388_608) throw new Exception("Le total dépasse 8 Mo.");
+            pages.add(new JSONObject().put("mime_type", "image/jpeg").put("data", base64(bytes)));
+        } finally {
+            if (scaled != bitmap && !scaled.isRecycled()) scaled.recycle();
         }
-        long total = bytes.length;
-        for (JSONObject page : pages) total += Base64.decode(page.getString("data"), Base64.DEFAULT).length;
-        if (total > 8_388_608) throw new Exception("Le total dépasse 8 Mo.");
-        pages.add(new JSONObject().put("mime_type", "image/jpeg").put("data", base64(bytes)));
-        if (preview != null && preview != scaled && preview != bitmap && !preview.isRecycled()) preview.recycle();
-        preview = scaled;
-        if (bitmap != scaled && !bitmap.isRecycled()) bitmap.recycle();
     }
 
     private static Bitmap scale(Bitmap src, int max) {
@@ -900,6 +860,14 @@ final class DocumentImportController {
         int space = trimmed.indexOf(' ');
         if (space < 0) return new String[]{trimmed, ""};
         return new String[]{trimmed.substring(0, space), trimmed.substring(space + 1).trim()};
+    }
+
+    private static String firstFilled(JSONObject src, String... keys) {
+        for (String key : keys) {
+            String value = src.optString(key, "").trim();
+            if (!value.isEmpty()) return value;
+        }
+        return "";
     }
 
     private static String joinEmails(JSONArray list) {
@@ -973,6 +941,15 @@ final class DocumentImportController {
         screen = null;
     }
 
+    private void dismissProgress() {
+        stopProgressLoop();
+        progressBar = null;
+        shownPercent = 0;
+        if (progressDialog == null) return;
+        try { progressDialog.dismiss(); } catch (Exception ignored) {}
+        progressDialog = null;
+    }
+
     private void showWhenReady(Runnable uiAction) {
         pendingUi = uiAction;
         if (resumed) flushUi();
@@ -1013,6 +990,9 @@ final class DocumentImportController {
     private static String messageOf(Exception e) {
         String message = e.getMessage();
         if (blank(message)) return "Opération impossible. Aucune fiche n’a été créée.";
+        if (message.matches("(?i).*(openai|gpt-|intelligence artificielle|prestataire).*")) {
+            return "La lecture de la carte a échoué. Réessayez ou saisissez les informations. Aucune fiche n’a été créée.";
+        }
         return message;
     }
 
@@ -1082,16 +1062,13 @@ final class DocumentImportController {
         cameraUri = null;
     }
 
-    private void discardPhoto() {
+    private void wipeImage() {
         pages.clear();
-        recyclePreview();
-        previewError = "";
         deleteCaptureFiles();
     }
 
-    private void recyclePreview() {
-        if (preview != null && !preview.isRecycled()) preview.recycle();
-        preview = null;
+    private void discardPhoto() {
+        wipeImage();
     }
 
     private int dp(int value) { return ui.dp(value); }
