@@ -50,7 +50,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 
-/** Scanner ouvre l’appareil photo. La photo lance la lecture. Une seule confirmation : enregistrer. */
+/** Scanner propose l’appareil photo ou l’import d’une photo. L’image lance la lecture. Une seule confirmation : enregistrer. */
 final class DocumentImportController {
     private static final String PROGRESS_LABEL = "Analyse en cours…";
     static final int REQ_CAMERA = 4101;
@@ -146,7 +146,27 @@ final class DocumentImportController {
         dismissProgress();
         discardPhoto();
         setStatus("");
-        openCamera();
+        chooseSource();
+    }
+
+    /** Chaque bouton Scanner ouvre ces deux actions, sans lancer l’appareil photo tout de suite. */
+    private void chooseSource() {
+        LinearLayout body = ui.column();
+        TextView help = ui.subtitle("Appareil photo, ou une photo déjà enregistrée.");
+        help.setPadding(0, dp(8), 0, dp(8));
+        body.addView(help);
+        LinearLayout footer = ui.column();
+        footer.addView(ui.primary("Appareil photo", () -> {
+            if (extracting || analysisQueued) return;
+            dismissKeepingPhoto();
+            openCamera();
+        }));
+        footer.addView(ui.secondary("Importer une photo", () -> {
+            if (extracting || analysisQueued) return;
+            dismissKeepingPhoto();
+            openPicker();
+        }));
+        openScreen("Scanner", body, footer);
     }
 
     private void openCamera() {
@@ -455,12 +475,12 @@ final class DocumentImportController {
             keepPhotoOnDismiss = false;
             beginAnalysis();
         }));
-        footer.addView(ui.secondary("Reprendre la photo", () -> {
+        footer.addView(ui.secondary("Choisir une autre photo", () -> {
             if (extracting || analysisQueued) return;
             analysisGeneration++;
             wipeImage();
             dismissKeepingPhoto();
-            openCamera();
+            chooseSource();
         }));
         footer.addView(ui.secondary("Saisir manuellement", () -> {
             if (extracting || analysisQueued) return;

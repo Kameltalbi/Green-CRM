@@ -2,14 +2,19 @@ package com.ciblix.crm;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.os.Build;
 import android.text.InputType;
 import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.Spinner;
+import android.widget.Switch;
 import android.widget.TextView;
+import android.Manifest;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.time.OffsetDateTime;
@@ -88,6 +93,7 @@ final class SettingsScreen {
             content.addView(accountCard(user, organization));
             content.addView(workspaceCard(organization, organizations));
             if (admin) content.addView(teamCard(user, organization, members, invitations));
+            content.addView(notificationsCard());
             content.addView(privacyCard());
             content.addView(ui.primary("Se déconnecter", () -> call("POST", "/api/v1/auth/logout", new JSONObject(), signedOut)));
         } catch (Exception error) {
@@ -271,6 +277,45 @@ final class SettingsScreen {
         } catch (Exception error) {
             showError(error.getMessage());
         }
+    }
+
+    private LinearLayout notificationsCard() {
+        LinearLayout card = section("Notifications de relance", "Alerte sur cet appareil quand une suggestion est nouvelle. Aucun message n’est envoyé.");
+        SharedPreferences prefs = activity.getSharedPreferences(FollowupNotifier.PREFS, Context.MODE_PRIVATE);
+        Switch enabled = new Switch(activity);
+        enabled.setText("Activer les notifications");
+        enabled.setChecked(prefs.getBoolean("enabled", true));
+        card.addView(enabled);
+        card.addView(ui.subtitle("Heures de tranquillité, de l’heure de début jusqu’à l’heure de fin. Exemple : 20 et 8."));
+        EditText start = new EditText(activity);
+        start.setInputType(InputType.TYPE_CLASS_NUMBER);
+        start.setHint("Début");
+        start.setText(String.valueOf(prefs.getInt("quiet_start", 20)));
+        EditText end = new EditText(activity);
+        end.setInputType(InputType.TYPE_CLASS_NUMBER);
+        end.setHint("Fin");
+        end.setText(String.valueOf(prefs.getInt("quiet_end", 8)));
+        card.addView(start);
+        card.addView(end);
+        card.addView(ui.primary("Enregistrer les notifications", () -> {
+            int from = hour(start.getText().toString(), 20);
+            int to = hour(end.getText().toString(), 8);
+            prefs.edit().putBoolean("enabled", enabled.isChecked()).putInt("quiet_start", from).putInt("quiet_end", to).apply();
+            if (enabled.isChecked() && Build.VERSION.SDK_INT >= 33) {
+                activity.requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 41);
+            }
+            banner.setText("Notifications de relance enregistrées.");
+            banner.setVisibility(View.VISIBLE);
+        }));
+        return card;
+    }
+
+    private int hour(String value, int fallback) {
+        try {
+            int parsed = Integer.parseInt(value.trim());
+            if (parsed >= 0 && parsed <= 23) return parsed;
+        } catch (NumberFormatException ignored) {}
+        return fallback;
     }
 
     private LinearLayout privacyCard() {

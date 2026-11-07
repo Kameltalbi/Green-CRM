@@ -1,16 +1,21 @@
 package com.ciblix.crm;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.net.Uri;
 import android.text.InputType;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.Spinner;
 import android.widget.TextView;
@@ -36,11 +41,13 @@ final class ContactRecordScreen {
         void onPlanFollowup(String contactId);
         void onEditFollowup(JSONObject followup);
         void onPane(int pane);
+        void onClose();
         void onSessionExpired();
         void onStatus(String message, int color);
     }
 
     private static final DateTimeFormatter WHEN = DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale.FRENCH);
+    private static final DateTimeFormatter SHORT_WHEN = DateTimeFormatter.ofPattern("dd MMM", Locale.FRENCH);
     private static final ZoneId TUNIS = ZoneId.of("Africa/Tunis");
     private static final String[] STATUS_VALUES = {"", "à organiser", "en cours", "en attente", "gagné", "perdu", "inactif"};
     private static final String[] STATUS_LABELS = {"Non renseigné", "À organiser", "En cours", "En attente", "Gagné", "Perdu", "Inactif"};
@@ -57,12 +64,12 @@ final class ContactRecordScreen {
 
     private LinearLayout content;
     private LinearLayout actions;
+    private LinearLayout rubricWrap;
     private Spinner rubric;
     private TextView avatarView;
     private TextView nameView;
     private TextView jobView;
     private TextView companyView;
-    private TextView badgeView;
     private ImageButton editButton;
     private ArrayAdapter<String> rubricAdapter;
     private boolean suppressRubric;
@@ -91,6 +98,7 @@ final class ContactRecordScreen {
     private int activitiesTotal = -1;
     private String activitiesError;
     private JSONArray followups;
+    private JSONArray suggestions;
     private int followupsTotal = -1;
     private String followupsError;
     private boolean loadingExtras;
@@ -119,7 +127,8 @@ final class ContactRecordScreen {
         chrome.addView(header());
         actions = actionRow();
         chrome.addView(actions);
-        chrome.addView(rubric());
+        chrome.addView(hairline());
+        chrome.addView(rubricBlock());
         if (preview) showPreview();
         else {
             paintHeader();
@@ -132,7 +141,7 @@ final class ContactRecordScreen {
         if (!listener.alive()) return false;
         if (editing) {
             editing = false;
-            rubric.setVisibility(View.VISIBLE);
+            showRubric(true);
             refreshActions();
             showPane();
             return true;
@@ -148,49 +157,65 @@ final class ContactRecordScreen {
     }
 
     private LinearLayout header() {
+        LinearLayout wrap = ui.column();
+        LinearLayout bar = ui.row();
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPadding(0, ui.dp(4), 0, ui.dp(8));
+        ImageButton back = iconButton(R.drawable.ic_chevron, "Revenir aux contacts");
+        back.setScaleX(-1f);
+        back.setOnClickListener(v -> {
+            if (!handleBack()) listener.onClose();
+        });
+        bar.addView(back);
+        TextView title = ui.label("Fiche contact", 18, UiKit.PETROLEUM, true);
+        title.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1));
+        title.setPadding(ui.dp(4), 0, ui.dp(8), 0);
+        bar.addView(title);
+        editButton = iconButton(R.drawable.ic_edit, "Modifier");
+        editButton.setOnClickListener(v -> startEdit());
+        bar.addView(editButton);
+        wrap.addView(bar);
+
         LinearLayout row = ui.row();
         row.setPadding(0, ui.dp(8), 0, ui.dp(4));
-        avatarView = ui.label(initials(text(record, "name")), 16, UiKit.PETROLEUM, true);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        avatarView = ui.label(initials(text(record, "name")), 18, UiKit.PETROLEUM, true);
         avatarView.setGravity(Gravity.CENTER);
-        avatarView.setBackground(ui.round(UiKit.SAGE_WASH, 99));
-        LinearLayout.LayoutParams avatarLp = new LinearLayout.LayoutParams(ui.dp(48), ui.dp(48));
-        avatarLp.rightMargin = ui.dp(12);
+        avatarView.setBackground(ui.round(Color.rgb(241, 243, 245), 99));
+        LinearLayout.LayoutParams avatarLp = new LinearLayout.LayoutParams(ui.dp(72), ui.dp(72));
+        avatarLp.rightMargin = ui.dp(14);
         avatarView.setLayoutParams(avatarLp);
         row.addView(avatarView);
 
         LinearLayout identity = ui.column();
         identity.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1));
-        nameView = ui.label(text(record, "name").isEmpty() ? "Contact" : text(record, "name"), 22, UiKit.PETROLEUM, true);
+        nameView = ui.label(text(record, "name").isEmpty() ? "Contact" : text(record, "name"), 20, UiKit.PETROLEUM, true);
         nameView.setLetterSpacing(-0.02f);
         identity.addView(nameView);
-        jobView = ui.label("", 14, UiKit.MUTED, false);
+        jobView = ui.label("", 15, UiKit.MUTED, false);
+        jobView.setPadding(0, ui.dp(2), 0, 0);
         identity.addView(jobView);
-        companyView = ui.label("", 15, UiKit.SAGE, true);
+        companyView = ui.label("", 15, UiKit.MUTED, false);
+        companyView.setPadding(0, ui.dp(2), 0, 0);
         companyView.setOnClickListener(v -> {
             if (!companyId.isEmpty()) listener.onCompany(companyId);
         });
         identity.addView(companyView);
         row.addView(identity);
+        wrap.addView(row);
+        return wrap;
+    }
 
-        LinearLayout side = ui.column();
-        side.setGravity(Gravity.END);
-        badgeView = ui.label("", 12, UiKit.SAGE, true);
-        badgeView.setBackground(ui.round(UiKit.SAGE_WASH, 99));
-        badgeView.setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(4));
-        side.addView(badgeView);
-        editButton = new ImageButton(activity);
-        editButton.setImageResource(R.drawable.ic_edit);
-        editButton.setColorFilter(UiKit.PETROLEUM);
-        editButton.setBackground(ui.round(UiKit.FIELD, 12));
-        editButton.setContentDescription("Modifier");
-        editButton.setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8));
-        LinearLayout.LayoutParams editLp = new LinearLayout.LayoutParams(ui.dp(40), ui.dp(40));
-        editLp.topMargin = ui.dp(8);
-        editButton.setLayoutParams(editLp);
-        editButton.setOnClickListener(v -> startEdit());
-        side.addView(editButton);
-        row.addView(side);
-        return row;
+    private ImageButton iconButton(int icon, String description) {
+        ImageButton button = new ImageButton(activity);
+        button.setImageResource(icon);
+        button.setColorFilter(UiKit.PETROLEUM);
+        button.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        button.setBackgroundColor(Color.TRANSPARENT);
+        button.setContentDescription(description);
+        button.setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8));
+        button.setLayoutParams(new LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)));
+        return button;
     }
 
     private LinearLayout actionRow() {
@@ -199,17 +224,45 @@ final class ContactRecordScreen {
         return row;
     }
 
+    private LinearLayout rubricBlock() {
+        rubricWrap = ui.column();
+        TextView caption = ui.label("Rubrique", 13, UiKit.MUTED, false);
+        caption.setPadding(ui.dp(2), ui.dp(14), 0, ui.dp(6));
+        rubricWrap.addView(caption);
+        FrameLayout field = new FrameLayout(activity);
+        field.addView(rubric(), new FrameLayout.LayoutParams(-1, -2));
+        ImageView chevron = new ImageView(activity);
+        chevron.setImageResource(R.drawable.ic_chevron);
+        chevron.setRotation(90f);
+        chevron.setColorFilter(UiKit.PETROLEUM);
+        chevron.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        FrameLayout.LayoutParams chevronLp = new FrameLayout.LayoutParams(ui.dp(18), ui.dp(18), Gravity.END | Gravity.CENTER_VERTICAL);
+        chevronLp.rightMargin = ui.dp(14);
+        field.addView(chevron, chevronLp);
+        LinearLayout.LayoutParams fieldLp = new LinearLayout.LayoutParams(-1, -2);
+        fieldLp.bottomMargin = ui.dp(8);
+        rubricWrap.addView(field, fieldLp);
+        return rubricWrap;
+    }
+
+    private void showRubric(boolean visible) {
+        if (rubricWrap != null) rubricWrap.setVisibility(visible ? View.VISIBLE : View.GONE);
+    }
+
     private Spinner rubric() {
         rubric = new Spinner(activity);
-        rubric.setBackground(ui.round(UiKit.FIELD, 12));
+        GradientDrawable field = ui.round(Color.WHITE, 12);
+        field.setStroke(Math.max(1, ui.dp(1)), Color.rgb(226, 232, 230));
+        rubric.setBackground(field);
         rubric.setPadding(ui.dp(12), ui.dp(4), ui.dp(12), ui.dp(4));
         rubric.setMinimumHeight(ui.dp(48));
-        rubric.setContentDescription("Rubrique de la fiche");
+        rubric.setContentDescription("Liste déroulante. Appuyer pour choisir Informations, E-mails, Activités ou Relances.");
         rubricAdapter = new ArrayAdapter<>(activity, android.R.layout.simple_spinner_item, paneLabels) {
             @Override public View getView(int position, View convertView, ViewGroup parent) {
                 TextView label = (TextView) super.getView(position, convertView, parent);
                 label.setTextColor(UiKit.PETROLEUM);
                 label.setTextSize(16);
+                label.setPadding(ui.dp(12), ui.dp(12), ui.dp(40), ui.dp(12));
                 return label;
             }
             @Override public View getDropDownView(int position, View convertView, ViewGroup parent) {
@@ -235,15 +288,13 @@ final class ContactRecordScreen {
                 messageError = null;
                 pane = position;
                 listener.onPane(pane);
-                rubric.setVisibility(View.VISIBLE);
+                showRubric(true);
                 refreshActions();
                 showPane();
             }
             @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {}
         });
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.bottomMargin = ui.dp(8);
-        rubric.setLayoutParams(lp);
+        rubric.setLayoutParams(new FrameLayout.LayoutParams(-1, -2));
         return rubric;
     }
 
@@ -256,9 +307,7 @@ final class ContactRecordScreen {
         jobView.setVisibility(job.isEmpty() ? View.GONE : View.VISIBLE);
         companyView.setText(companyName);
         companyView.setVisibility(companyName.isEmpty() ? View.GONE : View.VISIBLE);
-        String status = statusLabel(text(record, "status"));
-        badgeView.setText(status);
-        badgeView.setVisibility(status.isEmpty() ? View.GONE : View.VISIBLE);
+        companyView.setContentDescription(companyName.isEmpty() ? null : "Ouvrir " + companyName);
         editButton.setVisibility(listener.canWrite() && !editing ? View.VISIBLE : View.GONE);
         refreshActions();
     }
@@ -272,20 +321,31 @@ final class ContactRecordScreen {
         String phone = firstFilled(text(record, "phone"), text(record, "phone_work"));
         String mail = addresses.isEmpty() ? "" : addresses.get(0);
         String whatsapp = text(record, "whatsapp");
-        if (!phone.isEmpty()) actions.addView(action("Appeler", () -> dial(phone)));
-        if (!mail.isEmpty()) actions.addView(action("E-mail", () -> mailTo(mail)));
-        if (!whatsapp.isEmpty()) actions.addView(action("WhatsApp", () -> whatsApp(whatsapp)));
+        if (!phone.isEmpty()) actions.addView(action("Appeler", R.drawable.ic_phone, () -> dial(phone)));
+        if (!mail.isEmpty()) actions.addView(action("E-mail", R.drawable.ic_email, () -> mailTo(mail)));
+        if (!whatsapp.isEmpty()) actions.addView(action("WhatsApp", R.drawable.ic_whatsapp, () -> whatsApp(whatsapp)));
         actions.setVisibility(actions.getChildCount() == 0 ? View.GONE : View.VISIBLE);
     }
 
-    private TextView action(String label, Runnable run) {
-        TextView view = ui.label(label, 15, UiKit.SAGE, true);
-        view.setGravity(Gravity.CENTER);
-        view.setPadding(ui.dp(8), ui.dp(10), ui.dp(8), ui.dp(10));
-        view.setOnClickListener(v -> run.run());
-        view.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1));
-        view.setContentDescription(label);
-        return view;
+    private LinearLayout action(String label, int icon, Runnable run) {
+        LinearLayout cell = ui.column();
+        cell.setGravity(Gravity.CENTER_HORIZONTAL);
+        cell.setPadding(ui.dp(4), ui.dp(12), ui.dp(4), ui.dp(8));
+        ImageView image = new ImageView(activity);
+        image.setImageResource(icon);
+        image.setColorFilter(UiKit.PETROLEUM);
+        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(ui.dp(22), ui.dp(22));
+        iconLp.gravity = Gravity.CENTER_HORIZONTAL;
+        image.setLayoutParams(iconLp);
+        TextView text = ui.label(label, 13, UiKit.PETROLEUM, false);
+        text.setGravity(Gravity.CENTER);
+        text.setPadding(0, ui.dp(6), 0, 0);
+        cell.addView(image);
+        cell.addView(text);
+        cell.setOnClickListener(v -> run.run());
+        cell.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1));
+        cell.setContentDescription(label);
+        return cell;
     }
 
     private void showPane() {
@@ -313,11 +373,11 @@ final class ContactRecordScreen {
             return;
         }
         LinearLayout coordinates = section("Coordonnées");
-        linkRow(coordinates, "Téléphone mobile", text(record, "phone"), () -> dial(text(record, "phone")));
-        linkRow(coordinates, "Téléphone professionnel", text(record, "phone_work"), () -> dial(text(record, "phone_work")));
-        for (String address : addresses) linkRow(coordinates, "Adresse e-mail", address, () -> mailTo(address));
-        if (!text(record, "whatsapp").isEmpty()) linkRow(coordinates, "WhatsApp", text(record, "whatsapp"), () -> whatsApp(text(record, "whatsapp")));
-        valueRow(coordinates, "Adresse professionnelle", companyAddress);
+        iconLine(coordinates, R.drawable.ic_phone, text(record, "phone"), () -> dial(text(record, "phone")));
+        iconLine(coordinates, R.drawable.ic_phone, text(record, "phone_work"), () -> dial(text(record, "phone_work")));
+        for (String address : addresses) iconLine(coordinates, R.drawable.ic_email, address, () -> mailTo(address));
+        iconLine(coordinates, R.drawable.ic_whatsapp, text(record, "whatsapp"), () -> whatsApp(text(record, "whatsapp")));
+        iconLine(coordinates, R.drawable.ic_pin, companyAddress, null);
         if (!companyWebsite.isEmpty()) linkRow(coordinates, "Site web", companyWebsite, () -> openWeb(companyWebsite));
         addSection(coordinates);
 
@@ -345,6 +405,13 @@ final class ContactRecordScreen {
     }
 
     private void paintEmails() {
+        LinearLayout heading = ui.row();
+        heading.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = sectionTitle("Échanges par e-mail");
+        title.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1));
+        heading.addView(title);
+        if (emailsTotal >= 0) heading.addView(ui.label(emailsTotal == 1 ? "1 message" : emailsTotal + " messages", 13, UiKit.MUTED, false));
+        content.addView(heading);
         TextView refresh = ui.label("Actualiser", 14, UiKit.SAGE, true);
         refresh.setPadding(0, ui.dp(8), 0, ui.dp(8));
         refresh.setOnClickListener(v -> reloadEmails());
@@ -373,24 +440,21 @@ final class ContactRecordScreen {
 
     private LinearLayout emailRow(JSONObject message) {
         LinearLayout row = ui.column();
-        row.setPadding(0, ui.dp(10), 0, ui.dp(10));
+        row.setPadding(0, ui.dp(12), 0, ui.dp(12));
         LinearLayout top = ui.row();
+        top.setGravity(Gravity.CENTER_VERTICAL);
         boolean outbound = "outbound".equals(message.optString("direction"));
-        TextView badge = ui.label(outbound ? "Envoyé" : "Reçu", 12, outbound ? UiKit.PETROLEUM : UiKit.SAGE, true);
-        badge.setBackground(ui.round(outbound ? UiKit.MIST : UiKit.SAGE_WASH, 99));
-        badge.setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(4));
-        badge.setSingleLine(true);
-        top.addView(badge);
-        View spacer = new View(activity);
-        spacer.setLayoutParams(new LinearLayout.LayoutParams(0, 1, 1));
-        top.addView(spacer);
-        TextView date = ui.label(when(text(message, "internal_date")), 13, UiKit.MUTED, false);
+        String subjectText = mailText(text(message, "subject").isEmpty() ? "(sans objet)" : text(message, "subject"));
+        TextView subject = ui.label((outbound ? "Envoyé — " : "Reçu — ") + subjectText, 16, UiKit.PETROLEUM, true);
+        subject.setMaxLines(2);
+        subject.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        subject.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1));
+        top.addView(subject);
+        TextView date = ui.label(shortWhen(text(message, "internal_date")), 13, UiKit.MUTED, false);
         date.setSingleLine(true);
+        date.setPadding(ui.dp(12), 0, 0, 0);
         top.addView(date);
         row.addView(top);
-        TextView subject = ui.label(mailText(text(message, "subject").isEmpty() ? "(sans objet)" : text(message, "subject")), 16, UiKit.PETROLEUM, true);
-        subject.setPadding(0, ui.dp(6), 0, 0);
-        row.addView(subject);
         TextView preview = ui.label(mailText(text(message, "snippet")), 14, UiKit.MUTED, false);
         preview.setMaxLines(2);
         preview.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -497,7 +561,7 @@ final class ContactRecordScreen {
     }
 
     private void paintFollowups() {
-        if (listener.canWrite()) content.addView(ui.primary("Planifier une relance", () -> listener.onPlanFollowup(contactId)));
+        if (listener.canWrite()) content.addView(retry("Planifier une relance", () -> listener.onPlanFollowup(contactId)));
         if (followupsError != null && followups == null) {
             content.addView(ui.subtitle(followupsError));
             content.addView(retry("Réessayer", this::reloadFollowups));
@@ -516,6 +580,13 @@ final class ContactRecordScreen {
             else past.add(item);
         }
         past.sort(Comparator.comparing((JSONObject item) -> text(item, "due_at")).reversed());
+        content.addView(sectionTitle("Suggestions"));
+        if (suggestions == null) content.addView(ui.subtitle("Chargement des suggestions…"));
+        else if (suggestions.length() == 0) content.addView(ui.subtitle("Aucune suggestion automatique."));
+        else for (int i = 0; i < suggestions.length(); i++) {
+            JSONObject item = suggestions.optJSONObject(i);
+            if (item != null) content.addView(suggestionRow(item));
+        }
         content.addView(sectionTitle("Relances à venir"));
         if (upcoming.isEmpty()) content.addView(ui.subtitle("Aucune relance à venir."));
         for (JSONObject item : upcoming) content.addView(followupRow(item, true));
@@ -550,8 +621,76 @@ final class ContactRecordScreen {
         return row;
     }
 
+    private LinearLayout suggestionRow(JSONObject item) {
+        LinearLayout row = ui.column();
+        row.setPadding(0, ui.dp(10), 0, ui.dp(6));
+        String heading = text(item, "priority_label");
+        if (!text(item, "kind_label").isEmpty()) heading = heading.isEmpty() ? text(item, "kind_label") : heading + " · " + text(item, "kind_label");
+        if (!heading.isEmpty()) row.addView(ui.label(heading, 13, UiKit.SAGE, true));
+        row.addView(ui.label(text(item, "reason"), 16, UiKit.PETROLEUM, false));
+        if (listener.canWrite() && !preview) {
+            LinearLayout commands = ui.row();
+            commands.addView(suggestionLink("Préparer un e-mail", () -> prepareSuggestion(item)));
+            commands.addView(suggestionLink("Planifier un appel", () -> listener.onPlanFollowup(contactId)));
+            row.addView(commands);
+            LinearLayout more = ui.row();
+            more.addView(suggestionLink("Reporter", () -> snoozeSuggestion(item)));
+            more.addView(suggestionLink("Ignorer", () -> suggestionAction(item, "ignore", 0)));
+            more.addView(suggestionLink("Marquer comme traité", () -> suggestionAction(item, "done", 0)));
+            row.addView(more);
+        }
+        return row;
+    }
+
+    private TextView suggestionLink(String label, Runnable action) {
+        TextView link = ui.label(label, 14, UiKit.SAGE, true);
+        link.setPadding(0, ui.dp(6), ui.dp(12), ui.dp(6));
+        link.setOnClickListener(v -> action.run());
+        return link;
+    }
+
+    private void prepareSuggestion(JSONObject item) {
+        String email = text(item, "email");
+        String subject = text(item, "subject");
+        String target = "mailto:" + email;
+        if (!subject.isEmpty()) target += "?subject=" + Uri.encode("Relance : " + subject);
+        open(new Intent(Intent.ACTION_SENDTO, Uri.parse(target)), "Aucune application e-mail.");
+    }
+
+    private void snoozeSuggestion(JSONObject item) {
+        if (preview) return;
+        new AlertDialog.Builder(activity)
+            .setTitle("Reporter")
+            .setMessage("La suggestion revient après le délai choisi. Aucun message n’est envoyé.")
+            .setNeutralButton("3 jours", (dialog, which) -> suggestionAction(item, "snooze", 3))
+            .setPositiveButton("7 jours", (dialog, which) -> suggestionAction(item, "snooze", 7))
+            .setNegativeButton("14 jours", (dialog, which) -> suggestionAction(item, "snooze", 14))
+            .show();
+    }
+
+    private void suggestionAction(JSONObject item, String action, int days) {
+        if (preview) return;
+        worker.execute(() -> {
+            try {
+                JSONObject body = new JSONObject().put("action", action);
+                if (days > 0) body.put("snooze_days", days);
+                api.request("PATCH", "/api/v1/followup-suggestions/" + item.getString("id"), body);
+                activity.runOnUiThread(() -> {
+                    if (!listener.alive()) return;
+                    listener.onStatus("ignore".equals(action) ? "Suggestion ignorée." : "done".equals(action) ? "Suggestion marquée comme traitée." : "Suggestion reportée.", UiKit.SAGE);
+                    reloadFollowups();
+                });
+            } catch (Exception error) {
+                if (unauthorized(error)) return;
+                activity.runOnUiThread(() -> {
+                    if (listener.alive()) listener.onStatus(messageOf(error), UiKit.DANGER);
+                });
+            }
+        });
+    }
+
     private void paintEditor() {
-        rubric.setVisibility(View.GONE);
+        showRubric(false);
         LinearLayout form = ui.column();
         EditText name = ui.field(form, "Nom et prénom", text(record, "name"), InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
         EditText job = ui.field(form, "Fonction", text(record, "job_title"), InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
@@ -598,6 +737,7 @@ final class ContactRecordScreen {
             activities = new JSONArray().put(new JSONObject().put("action", "created").put("summary", "Création : Maha Ben Gaied").put("created_at", "2026-11-06T18:10:00Z").put("actor_name", "Kamel Talbi"));
             activitiesTotal = 1;
             followups = new JSONArray().put(new JSONObject().put("id", "f1").put("subject", "Relancer après le salon").put("status", "pending").put("due_at", "2026-11-20T09:00:00+01:00").put("owner_user_id", ""));
+            suggestions = new JSONArray().put(new JSONObject().put("id", "s1").put("kind_label", "Sans réponse").put("priority_label", "Haute").put("reason", "E-mail « DecarboTech et CarboScan » envoyé il y a 6 jours ouvrés, sans réponse dans la conversation.").put("email", "bengaied.maha@kilanigroupe.com").put("subject", "DecarboTech et CarboScan"));
             followupsTotal = 1;
             companyIds.clear();
             companyIds.add("");
@@ -769,6 +909,15 @@ final class ContactRecordScreen {
         worker.execute(() -> {
             try {
                 JSONObject data = api.request("GET", "/api/v1/followups?contact_id=" + contactId + "&limit=" + PAGE + "&offset=" + offset, null);
+                JSONArray nextSuggestions = null;
+                if (!append) {
+                    try {
+                        JSONObject suggested = api.request("GET", "/api/v1/followup-suggestions?contact_id=" + contactId + "&limit=20", null);
+                        nextSuggestions = suggested.optJSONArray("items");
+                    } catch (Exception ignored) {}
+                    if (nextSuggestions == null) nextSuggestions = new JSONArray();
+                }
+                JSONArray readySuggestions = nextSuggestions;
                 activity.runOnUiThread(() -> {
                     if (!listener.alive()) return;
                     followupsError = null;
@@ -776,6 +925,7 @@ final class ContactRecordScreen {
                     JSONArray page = data.optJSONArray("items");
                     if (!append || followups == null) followups = new JSONArray();
                     if (page != null) for (int i = 0; i < page.length(); i++) followups.put(page.opt(i));
+                    if (readySuggestions != null) suggestions = readySuggestions;
                     if (pane == 3 && !editing) showPane();
                 });
             } catch (Exception error) {
@@ -794,7 +944,7 @@ final class ContactRecordScreen {
     private void moreEmails() { loadEmails(true); }
     private void reloadActivities() { activities = null; notes = null; activitiesError = null; notesError = null; showPane(); loadActivities(false); loadNotes(false); }
     private void moreActivities() { if (notes != null && notes.length() < notesTotal) loadNotes(true); if (activities != null && activities.length() < activitiesTotal) loadActivities(true); }
-    private void reloadFollowups() { followups = null; followupsError = null; showPane(); loadFollowups(false); }
+    private void reloadFollowups() { followups = null; suggestions = null; followupsError = null; showPane(); loadFollowups(false); }
     private void moreFollowups() { loadFollowups(true); }
 
     private void openMessage(String id) {
@@ -933,7 +1083,7 @@ final class ContactRecordScreen {
     private void saveContact(EditText name, EditText job, EditText department, EditText phone, EditText phoneWork, EditText whatsapp, EditText source, EditText mails, Spinner status, Spinner company, TextView error) {
         String contactName = name.getText().toString().trim();
         if (contactName.isEmpty()) { name.setError("Indiquez le nom."); return; }
-        if (preview) { editing = false; rubric.setVisibility(View.VISIBLE); paintHeader(); showPane(); return; }
+        if (preview) { editing = false; showRubric(true); paintHeader(); showPane(); return; }
         error.setText("");
         int companyPosition = company.getSelectedItemPosition();
         String selectedCompany = companyPosition >= 0 && companyPosition < companyIds.size() ? companyIds.get(companyPosition) : "";
@@ -981,7 +1131,7 @@ final class ContactRecordScreen {
                     addresses.clear();
                     addresses.addAll(nextAddresses);
                     editing = false;
-                    rubric.setVisibility(View.VISIBLE);
+                    showRubric(true);
                     paintHeader();
                     showPane();
                     listener.onStatus("Contact enregistré.", UiKit.SAGE);
@@ -1042,6 +1192,34 @@ final class ContactRecordScreen {
         return box;
     }
 
+    private void iconLine(LinearLayout parent, int icon, String value, Runnable action) {
+        if (value == null || value.trim().isEmpty()) return;
+        LinearLayout row = ui.row();
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, ui.dp(8), 0, ui.dp(8));
+        ImageView image = new ImageView(activity);
+        image.setImageResource(icon);
+        image.setColorFilter(UiKit.PETROLEUM);
+        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(ui.dp(20), ui.dp(20));
+        iconLp.rightMargin = ui.dp(12);
+        image.setLayoutParams(iconLp);
+        TextView label = ui.label(value.trim(), 16, UiKit.PETROLEUM, false);
+        label.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1));
+        row.addView(image);
+        row.addView(label);
+        if (action != null) row.setOnClickListener(v -> action.run());
+        parent.addView(row);
+    }
+
+    private View hairline() {
+        View line = new View(activity);
+        line.setBackgroundColor(Color.rgb(226, 232, 230));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, Math.max(1, ui.dp(1)));
+        lp.topMargin = ui.dp(4);
+        line.setLayoutParams(lp);
+        return line;
+    }
+
     private TextView sectionTitle(String title) {
         TextView view = ui.label(title, 16, UiKit.PETROLEUM, true);
         view.setPadding(0, ui.dp(16), 0, ui.dp(6));
@@ -1083,6 +1261,20 @@ final class ContactRecordScreen {
         lp.topMargin = ui.dp(2);
         line.setLayoutParams(lp);
         content.addView(line);
+    }
+
+    private String shortWhen(String value) {
+        String full = when(value, SHORT_WHEN);
+        return full.isEmpty() ? when(value) : full;
+    }
+
+    private String when(String value, DateTimeFormatter formatter) {
+        if (value == null || value.isEmpty()) return "";
+        try { return OffsetDateTime.parse(value).atZoneSameInstant(TUNIS).format(formatter); }
+        catch (Exception error) {
+            try { return java.time.Instant.parse(value).atZone(TUNIS).format(formatter); }
+            catch (Exception ignored) { return ""; }
+        }
     }
 
     private void dial(String number) { open(new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(number))), "Aucune application d’appel."); }

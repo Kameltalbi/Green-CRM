@@ -699,6 +699,31 @@ public final class MainActivity extends Activity {
             .put("contact_statuses", new JSONArray());
     }
 
+    private void paintSuggestions(JSONObject suggestions) {
+        JSONArray items = suggestions == null ? null : suggestions.optJSONArray("items");
+        if (!layoutPreview) FollowupNotifier.deliver(this, items);
+        if (items == null || items.length() == 0) return;
+        TextView title = ui.label("À relancer aujourd’hui", 18, UiKit.PETROLEUM, true);
+        title.setPadding(0, dp(16), 0, 0);
+        content.addView(title);
+        content.addView(ui.subtitle("Aucun message n’est envoyé sans votre validation."));
+        int shown = Math.min(items.length(), 5);
+        for (int i = 0; i < shown; i++) {
+            JSONObject item = items.optJSONObject(i);
+            if (item == null) continue;
+            LinearLayout card = ui.column();
+            card.setPadding(0, dp(10), 0, dp(6));
+            card.addView(ui.label(item.optString("priority_label") + " · " + item.optString("contact_name"), 14, UiKit.SAGE, true));
+            card.addView(ui.label(item.optString("reason"), 16, UiKit.PETROLEUM, false));
+            String id = item.optString("contact_id");
+            card.setOnClickListener(v -> {
+                contactPane = 3;
+                openContact(id, null);
+            });
+            content.addView(card);
+        }
+    }
+
     private void paintDashboard(JSONObject data) throws Exception {
         dashboardPayload = data;
         JSONObject counts = data.getJSONObject("counts");
@@ -737,6 +762,7 @@ public final class MainActivity extends Activity {
             metrics.addView(card, lp);
         }
         content.addView(metrics);
+        paintSuggestions(data.optJSONObject("suggestions"));
 
         View priority = priorityStrip(periods, late, today, upcoming);
         if (priority != null) content.addView(priority);
@@ -1420,13 +1446,6 @@ public final class MainActivity extends Activity {
             renderDirectory();
             return;
         }
-        LinearLayout back = ui.row();
-        TextView backLink = ui.label("Contacts", 15, UiKit.SAGE, true);
-        backLink.setPadding(0, ui.dp(12), 0, 0);
-        backLink.setOnClickListener(v -> closeContact());
-        backLink.setContentDescription("Revenir aux contacts");
-        back.addView(backLink);
-        chrome.addView(back);
         final int ticket = generation;
         contactScreen = new ContactRecordScreen(this, ui, api, worker, new ContactRecordScreen.Listener() {
             @Override public boolean alive() { return !isDestroyed() && ticket == generation && "contact".equals(section); }
@@ -1439,6 +1458,7 @@ public final class MainActivity extends Activity {
             }
             @Override public void onEditFollowup(JSONObject followup) { editFollowup(followup); }
             @Override public void onPane(int pane) { contactPane = pane; }
+            @Override public void onClose() { closeContact(); }
             @Override public void onSessionExpired() {
                 sessions.clear();
                 api.token = "";
@@ -1457,6 +1477,7 @@ public final class MainActivity extends Activity {
     private void detail(JSONObject item) {
         if (busy) return;
         if ("contacts".equals(section)) {
+            contactPane = 0;
             openContact(item.optString("id"), item);
             return;
         }

@@ -405,6 +405,8 @@ blockquote footer { margin-top: 12px; }
 .record-card-details { margin-top: 22px; padding-top: 16px; border-top: 0; }
 .record-card-details summary { cursor: pointer; color: var(--blue); font-size: 1rem; }
 .record-card-details .card-photo-button { margin-top: 12px; }
+.contact-card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.contact-card-actions .card-photo-button { margin-top: 12px; }
 .business-card-preview img { display: block; max-height: 240px; width: auto; object-fit: contain; margin: auto; }
 .document-import-review { max-height: min(70vh, 640px); overflow: auto; }
 .document-import-item { margin: 16px 0; padding: 16px; border: 0; border-radius: 12px; background: var(--bg); }
@@ -441,6 +443,32 @@ dialog #detail-content > h2 { margin: 12px 28px 14px 0; font-size: 1.75rem; }
 dialog p { margin: 10px 0; }
 .dialog-close { position: absolute; right: 12px; top: 12px; font-size: 1.75rem; line-height: 1; border: 0; }
 .contact-drawer { position: fixed; inset: 0 0 0 auto; margin: 0; height: 100dvh; max-height: 100dvh; width: min(640px,100%); max-width: 100%; border-radius: 12px 0 0 12px; padding-top: 36px; }
+.contact-drawer #detail-content > h2 { font-size: 1.25rem; margin: 0 36px 12px 0; }
+.contact-sheet-identity { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 14px; align-items: start; }
+.contact-sheet-mark { font-size: 1.25rem; font-weight: 700; letter-spacing: -.03em; padding-top: 2px; }
+.contact-sheet-identity h3 { margin: 0; font-size: 1.375rem; }
+.contact-sheet-identity p { margin: 4px 0 0; color: var(--text-secondary); font-size: .875rem; }
+.contact-sheet-identity .contact-company-link, .contact-sheet-identity .record-subtle { margin: 6px 0 0; color: var(--text-secondary); }
+.contact-sheet-edit { display: inline-grid; place-items: center; width: 40px; height: 40px; border: 0; background: transparent; color: var(--text); }
+.contact-sheet-edit svg { width: 20px; height: 20px; }
+.contact-sheet-actions { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); margin: 8px 0 4px; }
+.contact-sheet-actions:empty { display: none; }
+.contact-sheet-actions a, .contact-sheet-actions button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 68px; border: 0; background: transparent; color: var(--text); font-size: .875rem; }
+.contact-sheet-actions svg { width: 22px; height: 22px; }
+.contact-sheet-tabs { display: flex; margin: 4px 0 16px; box-shadow: inset 0 -1px #E4EBE8; }
+.contact-sheet-tabs button { flex: 1; min-height: 44px; padding: 10px 4px; border: 0; border-radius: 0; background: transparent; color: var(--text-secondary); font-size: 1rem; white-space: nowrap; box-shadow: none; }
+.contact-sheet-tabs button[aria-selected='true'] { color: var(--text); font-weight: 650; box-shadow: inset 0 -2px var(--green); }
+.contact-sheet-pane[hidden] { display: none; }
+.contact-sheet .record-coordinates { background: transparent; padding: 0; }
+.contact-sheet .record-coordinates + .record-coordinates { margin-top: 20px; }
+.sheet-mail-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.sheet-mail-heading h2 { margin: 0; font-size: 1.125rem; }
+#record-email-count { font-size: .875rem; color: var(--text-secondary); white-space: nowrap; }
+.sheet-mail { display: grid; gap: 4px; width: 100%; padding: 14px 0; border: 0; border-radius: 0; background: transparent; box-shadow: inset 0 -1px #E4EBE8; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.sheet-mail-line { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.sheet-mail-line strong { font-size: 1rem; font-weight: 650; }
+.sheet-mail-line time { flex: none; font-size: .875rem; color: var(--text-secondary); white-space: nowrap; }
+.sheet-mail-snippet { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: .875rem; color: var(--text-secondary); }
 #toast { position: fixed; left: 50%; bottom: 20px; transform: translate(-50%,10px); max-width: calc(100% - 24px); background: var(--blue); color: var(--white); padding: 14px 20px; border-radius: 12px; font-size: 1rem; line-height: 1.5; box-shadow: var(--shadow); opacity: 0; pointer-events: none; z-index: 30; transition: opacity .15s,transform .15s; }
 #toast.visible { opacity: 1; transform: translate(-50%,0); }
 /* Authentification : mêmes champs, textes, liens et boutons que l’application. */
@@ -929,3 +957,8 @@ h1, h2, h3, p, small, label, strong, a, button, td, .tag, .tracking-badge { over
 .dashboard-overview .followup-today .followup-empty > span { background: var(--company-wash); color: var(--company); }
 .dashboard-overview .followup-late .followup-empty > span { background: var(--coral-wash); color: var(--coral); }
 .dashboard-overview .followup-upcoming .followup-empty > span { background: var(--orange-wash); color: #9A5B12; }
+.suggestion-panel { margin-bottom: 1rem; }
+.suggestion-list { display: grid; gap: .75rem; }
+.suggestion-card { display: grid; gap: .35rem; padding-top: .75rem; }
+.suggestion-card header { display: flex; justify-content: space-between; gap: .75rem; align-items: center; }
+.suggestion-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
